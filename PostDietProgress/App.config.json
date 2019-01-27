@@ -1,0 +1,11 @@
+﻿{
+  "Setting": {
+    "TanitaUserID": "",
+    "TanitaUserPass": "",
+    "TanitaClientID": "",
+    "TanitaClientSecretToken": "",
+    "DiscordWebhookUrl": "",
+    "OriginalWeight": "",
+    "GoalWeight": ""
+  }
+}
