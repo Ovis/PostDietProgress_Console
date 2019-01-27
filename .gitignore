@@ -328,6 +328,3 @@ ASALocalRun/
 
 # MFractors (Xamarin productivity tool) working folder 
 .mfractor/
-/PostDietProgress/InnerScan.cs
-/PostDietProgress/DiscordJson.cs
-/PostDietProgress/Token.cs
