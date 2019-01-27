@@ -18,3 +18,4 @@ namespace PostDietProgress
         public String height { get; set; }
         public String sex { get; set; }
     }
+}
