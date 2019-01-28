@@ -1,7 +1,9 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Dapper;
+using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -35,6 +37,8 @@ namespace PostDietProgress
         };
         private static HttpClient httpClient = new HttpClient();
 
+        private static SQLiteConnectionStringBuilder sqlConnectionSb = new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
+
         static void Main(string[] args)
         {
             /* 定義ファイルからID,パスワード,ClientID、ClientTokenを取得 */
@@ -53,6 +57,43 @@ namespace PostDietProgress
             Settings.OriginalWeight = Double.Parse(configuration["Setting:OriginalWeight"]);
             Settings.GoalWeight = Double.Parse(configuration["Setting:GoalWeight"]);
 
+            /* データ保管用テーブル作成 */
+            using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
+            {
+                dbConn.Open();
+
+                using (SQLiteCommand cmd = dbConn.CreateCommand())
+                {
+
+                    cmd.CommandText = "CREATE TABLE IF NOT EXISTS [SETTING] (" +
+                                                          "[KEY]  TEXT NOT NULL," +
+                                                          "[VALUE] TEXT NOT NULL" +
+                                                          ");";
+                    cmd.ExecuteNonQuery();
+
+                    using (var tran = dbConn.BeginTransaction())
+                    {
+                        try
+                        {
+                            var strBuilder = new StringBuilder();
+
+                            strBuilder.AppendLine("INSERT INTO SETTING (KEY,VALUE) SELECT @Key, @Val WHERE NOT EXISTS(SELECT 1 FROM SETTING WHERE KEY = @Key)");
+                            dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
+                            dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
+                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
+                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
+
+                            tran.Commit();
+                        }
+                        catch
+                        {
+                            tran.Rollback();
+                            return;
+                        }
+                    }
+                }
+            }
+
             /* 認証用データをスクレイピング */
             var doc = new HtmlAgilityPack.HtmlDocument();
 
@@ -62,38 +103,107 @@ namespace PostDietProgress
             httpClient.DefaultRequestHeaders.Add("Accept-Language", "ja-JP");
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
-            /* ログイン処理 */
-            var loginProcess = Task.Run(() =>
-            {
-                return LoginProcess();
-            });
-
             /* 認証処理 */
-            string htmldata = loginProcess.Result;
-
-            doc.LoadHtml(htmldata);
-
-            var oauthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
-
-            /* ログイン処理 */
-            var getApprovalCode = Task.Run(() =>
+            using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
             {
-                return GetApprovalCode(oauthToken);
-            });
+                dbConn.Open();
 
-            doc.LoadHtml(getApprovalCode.Result);
+                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'OAUTHTOKEN'").FirstOrDefault();
 
-            var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
+                if (string.IsNullOrEmpty(dbObj.Value))
+                {
+                    /* ログイン処理 */
+                    var loginProcess = Task.Run(() =>
+                    {
+                        return LoginProcess();
+                    });
 
-            /* リクエストトークン処理 */
-            var getAccessToken = Task.Run((Func<Task<string>>)(() =>
+                    string htmldata = loginProcess.Result;
+
+                    doc.LoadHtml(htmldata);
+
+                    Settings.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
+
+                    using (SQLiteCommand cmd = dbConn.CreateCommand())
+                    {
+                        using (var tran = dbConn.BeginTransaction())
+                        {
+                            try
+                            {
+                                var strBuilder = new StringBuilder();
+
+                                strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
+                                dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Settings.TanitaOAuthToken }, tran);
+
+                                tran.Commit();
+                            }
+                            catch
+                            {
+                                tran.Rollback();
+                                return;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    Settings.TanitaOAuthToken = dbObj.Value;
+                }
+            }
+
+            /*リクエストトークン取得処理 */
+            using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
             {
-                return (Task<string>)GetAccessToken(authCode);
-            }));
+                dbConn.Open();
 
-            var accessToken = JsonConvert.DeserializeObject<Token>(getAccessToken.Result).access_token;
+                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'ACCESSTOKEN'").FirstOrDefault();
 
-            Settings.TanitaAccessToken = accessToken;
+                if (string.IsNullOrEmpty(dbObj.Value))
+                {
+                    /* ログイン処理 */
+                    var getApprovalCode = Task.Run(() =>
+                    {
+                        return GetApprovalCode(Settings.TanitaOAuthToken);
+                    });
+
+                    doc.LoadHtml(getApprovalCode.Result);
+
+                    var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
+
+                    /* リクエストトークン処理 */
+                    var getAccessToken = Task.Run(() =>
+                    {
+                        return GetAccessToken(authCode);
+                    });
+
+                    Settings.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(getAccessToken.Result).access_token;
+
+                    using (SQLiteCommand cmd = dbConn.CreateCommand())
+                    {
+                        using (var tran = dbConn.BeginTransaction())
+                        {
+                            try
+                            {
+                                var strBuilder = new StringBuilder();
+
+                                strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
+                                dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Settings.TanitaAccessToken }, tran);
+
+                                tran.Commit();
+                            }
+                            catch
+                            {
+                                tran.Rollback();
+                                return;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    Settings.TanitaAccessToken = dbObj.Value;
+                }
+            }
 
             /* 身体データ取得 */
             /* ログイン処理 */
@@ -109,6 +219,21 @@ namespace PostDietProgress
             /* 最新の日付のデータを取得 */
             healthList.Sort((a, b) => string.Compare(b.date, a.date));
             var latestDate = healthList.First().date.ToString();
+            var previousDate = "";
+            using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
+            {
+                dbConn.Open();
+
+                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'").FirstOrDefault();
+
+                previousDate = dbObj.Value;
+
+                if (latestDate.Equals(previousDate))
+                {
+                    //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                    return;
+                }
+            }
 
             /* Discordに送るためのデータをDictionary化 */
             var latestHealthData = healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata);
@@ -116,10 +241,39 @@ namespace PostDietProgress
             /* Discordに送信 */
             var sendDiscord = Task.Run(() =>
             {
-                return SendDiscord(latestHealthData, healthData.height, latestDate);
+                return SendDiscord(latestHealthData, healthData.height, latestDate, previousDate);
             });
 
             var result = sendDiscord.Result;
+
+            /* 前回情報をDBに登録 */
+            using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
+            {
+                dbConn.Open();
+
+                using (SQLiteCommand cmd = dbConn.CreateCommand())
+                {
+                    using (var tran = dbConn.BeginTransaction())
+                    {
+                        try
+                        {
+                            var strBuilder = new StringBuilder();
+
+                            strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
+                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
+                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = latestHealthData[((int)HealthTag.WEIGHT).ToString()] }, tran);
+
+                            tran.Commit();
+                        }
+                        catch
+                        {
+                            tran.Rollback();
+                            return;
+                        }
+                    }
+                }
+            }
+
         }
 
         /// <summary>
@@ -246,8 +400,9 @@ namespace PostDietProgress
         /// <param name="dic">身体情報</param>
         /// <param name="height">身長</param>
         /// <param name="date">日付</param>
+        /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
-        async static public Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date)
+        async static public Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date, string previousDate)
         {
             HttpResponseMessage response = new HttpResponseMessage();
 
@@ -269,12 +424,36 @@ namespace PostDietProgress
             /* 目標達成率 */
             var goal = Math.Round(((1 - (weight - Settings.GoalWeight) / (Settings.OriginalWeight - Settings.GoalWeight)) * 100), 2);
 
-            var jsonData = new DiscordJson
-            {
-                content = dt.ToLongDateString() + " " + dt.ToShortTimeString() + "のダイエット進捗" + Environment.NewLine
+            /* 投稿文章 */
+            var postData = dt.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + "のダイエット進捗" + Environment.NewLine
                           + "現在の体重:" + weight.ToString() + "kg" + Environment.NewLine
                           + "BMI:" + bmi.ToString() + Environment.NewLine
-                          + "目標達成率:" + goal.ToString() + "%" + Environment.NewLine
+                          + "目標達成率:" + goal.ToString() + "%" + Environment.NewLine;
+
+            if (previousDate != "")
+            {
+                var prevDate = new DateTime();
+                if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out prevDate))
+                {
+                }
+
+                /* 前回測定データがあるならそれも投稿 */
+                using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
+                {
+                    dbConn.Open();
+
+                    var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSWEIGHT'").FirstOrDefault();
+
+                    var previousWeight = double.Parse(dbObj.Value);
+
+                    postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + Math.Round((previousWeight - weight), 2).ToString() + "kgの変化" + Environment.NewLine;
+
+                }
+            }
+
+            var jsonData = new DiscordJson
+            {
+                content = postData
             };
 
             var json = JsonConvert.SerializeObject(jsonData);

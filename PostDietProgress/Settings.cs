@@ -12,8 +12,10 @@ namespace PostDietProgress
 
         public static String TanitaClientSecretToken { get; set; }
 
-        public static String TanitaAccessToken { get; set; }
+        public static String TanitaOAuthToken { get; set; }
 
+        public static String TanitaAccessToken { get; set; }
+        
         public static String DiscordWebhookUrl { get; set; }
 
         public static Double OriginalWeight { get; set; }
