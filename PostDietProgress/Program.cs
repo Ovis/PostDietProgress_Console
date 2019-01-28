@@ -38,7 +38,7 @@ namespace PostDietProgress
         static void Main(string[] args)
         {
             /* 定義ファイルからID,パスワード,ClientID、ClientTokenを取得 */
-            string basePath = Directory.GetCurrentDirectory();
+            string basePath = AppDomain.CurrentDomain.BaseDirectory;
 
             IConfigurationRoot configuration = new ConfigurationBuilder()
            .SetBasePath(basePath)
