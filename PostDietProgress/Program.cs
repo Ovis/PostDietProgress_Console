@@ -10,6 +10,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
+using TimeZoneConverter;
 
 namespace PostDietProgress
 {
@@ -221,7 +222,7 @@ namespace PostDietProgress
             /* 測定日付で取得 */
             postString.Append("date=1&");
             /* 取得期間From,To */
-            var jst = TimeZoneInfo.FindSystemTimeZoneById("Tokyo Standard Time");
+            var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
             postString.Append("from=" + localTime.AddMonths(-3).ToString("yyyyMMdd") + "000000" + "&");
             postString.Append("to=" + localTime.ToString("yyyyMMdd") + "235959" + "&");
@@ -250,8 +251,7 @@ namespace PostDietProgress
         {
             HttpResponseMessage response = new HttpResponseMessage();
 
-            /* AzureだとUTCになるのでJSTにする */
-            var jst = TimeZoneInfo.FindSystemTimeZoneById("Tokyo Standard Time");
+            var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
 
             DateTime dt = new DateTime();
