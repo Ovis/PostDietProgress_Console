@@ -57,6 +57,9 @@ namespace PostDietProgress
             Settings.OriginalWeight = Double.Parse(configuration["Setting:OriginalWeight"]);
             Settings.GoalWeight = Double.Parse(configuration["Setting:GoalWeight"]);
 
+            /* 前回測定日時 */
+            var previousDate = "";
+
             /* データ保管用テーブル作成 */
             using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
             {
@@ -88,6 +91,23 @@ namespace PostDietProgress
                         catch
                         {
                             tran.Rollback();
+                            return;
+                        }
+                    }
+
+                    var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'").FirstOrDefault();
+
+                    previousDate = dbObj.Value;
+
+                    if (previousDate != "")
+                    {
+                        var prevDate = new DateTime();
+                        if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out prevDate))
+                        {
+                        }
+                        
+                        if(prevDate > DateTime.Now.AddHours(-6))
+                        {
                             return;
                         }
                     }
@@ -219,20 +239,11 @@ namespace PostDietProgress
             /* 最新の日付のデータを取得 */
             healthList.Sort((a, b) => string.Compare(b.date, a.date));
             var latestDate = healthList.First().date.ToString();
-            var previousDate = "";
-            using (var dbConn = new SQLiteConnection(sqlConnectionSb.ToString()))
+
+            if (latestDate.Equals(previousDate))
             {
-                dbConn.Open();
-
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'").FirstOrDefault();
-
-                previousDate = dbObj.Value;
-
-                if (latestDate.Equals(previousDate))
-                {
-                    //前回から計測日が変わっていない(=計測してない)ので処理を終了
-                    return;
-                }
+                //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                return;
             }
 
             /* Discordに送るためのデータをDictionary化 */
@@ -446,8 +457,11 @@ namespace PostDietProgress
 
                     var previousWeight = double.Parse(dbObj.Value);
 
-                    postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + Math.Round((previousWeight - weight), 2).ToString() + "kgの変化" + Environment.NewLine;
+                    var diffWeight = Math.Round((weight - previousWeight), 2);
 
+                    postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
+
+                    postData += diffWeight >= 0 ? "増えてる・・・。" : "減った！";
                 }
             }
 
