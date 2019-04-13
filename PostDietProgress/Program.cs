@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
+using PostDietProgress.Service;
 using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
@@ -18,6 +19,8 @@ namespace PostDietProgress
 {
     public static class Program
     {
+        private static readonly SQLiteConnectionStringBuilder SqlConnectionSb = new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
+
         enum HealthTag
         {
             WEIGHT = 6021, /* 体重 (kg) */
@@ -31,31 +34,16 @@ namespace PostDietProgress
             BONEQUANTITY = 6029 /* 推定骨量(kg) */
         }
 
-        private static readonly HttpClientHandler Handler = new HttpClientHandler()
-        {
-            UseCookies = true
-        };
-        private static readonly HttpClient HttpClient = new HttpClient();
-
-        private static readonly SQLiteConnectionStringBuilder SqlConnectionSb = new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
-
         static async Task Main(string[] args)
         {
-            /* 定義ファイルからID,パスワード,ClientID、ClientTokenを取得 */
-            var basePath = AppDomain.CurrentDomain.BaseDirectory;
+            var setting = new Settings();
 
-            var configuration = new ConfigurationBuilder()
-           .SetBasePath(basePath)
-           .AddJsonFile("App.config.json", optional: true)
-           .Build();
+            var httpClient = new HttpClient();
+            var handler = new HttpClientHandler() { UseCookies = true };
+            httpClient.DefaultRequestHeaders.Add("Accept-Language", "ja-JP");
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
-            Settings.TanitaUserID = configuration["Setting:TanitaUserID"];
-            Settings.TanitaUserPass = configuration["Setting:TanitaUserPass"];
-            Settings.TanitaClientID = configuration["Setting:TanitaClientID"];
-            Settings.TanitaClientSecretToken = configuration["Setting:TanitaClientSecretToken"];
-            Settings.DiscordWebhookUrl = configuration["Setting:DiscordWebhookUrl"];
-            Settings.OriginalWeight = Double.Parse(configuration["Setting:OriginalWeight"]);
-            Settings.GoalWeight = Double.Parse(configuration["Setting:GoalWeight"]);
+            var healthPlanetSvs = new HealthPlanetService(httpClient, handler, setting);
 
             /* 前回測定日時 */
             var previousDate = "";
@@ -104,8 +92,8 @@ namespace PostDietProgress
                         if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate))
                         {
                         }
-                        
-                        if(prevDate > DateTime.Now.AddHours(-6))
+
+                        if (prevDate > DateTime.Now.AddHours(-6))
                         {
                             return;
                         }
@@ -119,9 +107,6 @@ namespace PostDietProgress
             /* エンコードプロバイダーを登録(Shift-JIS用) */
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-            HttpClient.DefaultRequestHeaders.Add("Accept-Language", "ja-JP");
-            HttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-
             /* 認証処理 */
             using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
             {
@@ -132,11 +117,11 @@ namespace PostDietProgress
                 if (dbObj != null && string.IsNullOrEmpty(dbObj.Value))
                 {
                     /* ログイン処理 */
-                    var htmlData = await LoginProcess();
+                    var htmlData = await healthPlanetSvs.LoginProcess();
 
                     doc.LoadHtml(htmlData);
 
-                    Settings.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
+                    setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
 
                     using (SQLiteCommand cmd = dbConn.CreateCommand())
                     {
@@ -147,7 +132,7 @@ namespace PostDietProgress
                                 var strBuilder = new StringBuilder();
 
                                 strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                                dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Settings.TanitaOAuthToken }, tran);
+                                dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = setting.TanitaOAuthToken }, tran);
 
                                 tran.Commit();
                             }
@@ -163,7 +148,7 @@ namespace PostDietProgress
                 {
                     if (dbObj != null)
                     {
-                        Settings.TanitaOAuthToken = dbObj.Value;
+                        setting.TanitaOAuthToken = dbObj.Value;
                     }
                     else
                     {
@@ -182,12 +167,12 @@ namespace PostDietProgress
                 if (string.IsNullOrEmpty(dbObj?.Value))
                 {
                     /* ログイン処理 */
-                    doc.LoadHtml(await GetApprovalCode(Settings.TanitaOAuthToken));
+                    doc.LoadHtml(await healthPlanetSvs.GetApprovalCode(setting.TanitaOAuthToken));
 
                     var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
 
                     /* リクエストトークン処理 */
-                    Settings.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await GetAccessToken(authCode)).access_token;
+                    setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await healthPlanetSvs.GetAccessToken(authCode)).access_token;
 
                     using (dbConn.CreateCommand())
                     {
@@ -198,7 +183,7 @@ namespace PostDietProgress
                                 var strBuilder = new StringBuilder();
 
                                 strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                                dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Settings.TanitaAccessToken }, tran);
+                                dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = setting.TanitaAccessToken }, tran);
 
                                 tran.Commit();
                             }
@@ -212,14 +197,14 @@ namespace PostDietProgress
                 }
                 else
                 {
-                    Settings.TanitaAccessToken = dbObj.Value;
+                    setting.TanitaAccessToken = dbObj.Value;
                 }
             }
 
             /* 身体データ取得 */
             /* ログイン処理 */
 
-            var healthData = JsonConvert.DeserializeObject<InnerScan>(await GetHealthData());
+            var healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
 
             var healthList = healthData.data;
 
@@ -237,7 +222,7 @@ namespace PostDietProgress
             var latestHealthData = healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata);
 
             /* Discordに送信 */
-            await SendDiscord(latestHealthData, healthData.height, latestDate, previousDate);
+            await SendDiscord(latestHealthData, healthData.height, latestDate, previousDate, setting, httpClient);
 
             /* 前回情報をDBに登録 */
             using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
@@ -266,117 +251,6 @@ namespace PostDietProgress
                     }
                 }
             }
-
-        }
-
-        /// <summary>
-        /// ログイン認証処理
-        /// </summary>
-        /// <returns></returns>
-        public static async Task<string> LoginProcess()
-        {
-            /* ログイン認証先URL */
-            var authUrl = new StringBuilder();
-            authUrl.Append("https://www.healthplanet.jp/oauth/auth?");
-            authUrl.Append("client_id=" + Settings.TanitaClientID);
-            authUrl.Append("&redirect_uri=https://localhost/");
-            authUrl.Append("&scope=innerscan");
-            authUrl.Append("&response_type=code");
-
-            var postString = new StringBuilder();
-            postString.Append("loginId=" + Settings.TanitaUserID + "&");
-            postString.Append("passwd=" + Settings.TanitaUserPass + "&");
-            postString.Append("send=1&");
-            postString.Append("url=" + HttpUtility.UrlEncode(authUrl.ToString(), Encoding.GetEncoding("shift_jis")));
-
-            var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
-
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/login_oauth.do", contentShift);
-
-            var cookies = Handler.CookieContainer.GetCookies(new Uri("https://www.healthplanet.jp/"));
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
-        }
-
-        /// <summary>
-        /// トークン取得コード取得
-        /// </summary>
-        /// <param name="oAuthToken"></param>
-        /// <returns></returns>
-        public static async Task<string> GetApprovalCode(string oAuthToken)
-        {
-            var postString = new StringBuilder();
-            postString.Append("approval=true&");
-            postString.Append("oauth_token=" + oAuthToken + "&");
-
-            var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
-
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/oauth/approval.do", contentShift);
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
-        }
-
-        /// <summary>
-        /// アクセストークン取得
-        /// </summary>
-        /// <param name="oAuthToken"></param>
-        /// <returns></returns>
-        public static async Task<string> GetAccessToken(string oAuthToken)
-        {
-            var postString = new StringBuilder();
-            postString.Append("client_id=" + Settings.TanitaClientID + "&");
-            postString.Append("client_secret=" + Settings.TanitaClientSecretToken + "&");
-            postString.Append("redirect_uri=" + HttpUtility.UrlEncode("http://localhost/", Encoding.GetEncoding("shift_jis")) + "&");
-            postString.Append("code=" + oAuthToken + "&");
-            postString.Append("grant_type=authorization_code");
-
-            var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
-
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/oauth/token", contentShift);
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
-        }
-
-        /// <summary>
-        /// 身体データ取得
-        /// </summary>
-        /// <returns></returns>
-        public static async Task<string> GetHealthData()
-        {
-            var postString = new StringBuilder();
-            /* アクセストークン */
-            postString.Append("access_token=" + Settings.TanitaAccessToken + "&");
-            /* 測定日付で取得 */
-            postString.Append("date=1&");
-            /* 取得期間From,To */
-            var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
-            postString.Append("from=" + localTime.AddMonths(-3).ToString("yyyyMMdd") + "000000" + "&");
-            postString.Append("to=" + localTime.ToString("yyyyMMdd") + "235959" + "&");
-            /* 取得データ */
-            postString.Append("tag=6021,6022,6023,6024,6025,6026,6027,6028,6029" + "&");
-
-            var contentShift = new StringContent(postString.ToString(), Encoding.UTF8, "application/x-www-form-urlencoded");
-
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/status/innerscan.json", contentShift);
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
         }
 
         /// <summary>
@@ -387,7 +261,7 @@ namespace PostDietProgress
         /// <param name="date">日付</param>
         /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
-        public static async Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date, string previousDate)
+        public static async Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date, string previousDate, Settings setting, HttpClient httpClient)
         {
             var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
@@ -403,7 +277,7 @@ namespace PostDietProgress
             var bmi = Math.Round((weight / Math.Pow(cm, 2)), 2);
 
             /* 目標達成率 */
-            var goal = Math.Round(((1 - (weight - Settings.GoalWeight) / (Settings.OriginalWeight - Settings.GoalWeight)) * 100), 2);
+            var goal = Math.Round(((1 - (weight - setting.GoalWeight) / (setting.OriginalWeight - setting.GoalWeight)) * 100), 2);
 
             /* 投稿文章 */
             var postData = dt.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + "のダイエット進捗" + Environment.NewLine
@@ -444,7 +318,7 @@ namespace PostDietProgress
 
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var response = await HttpClient.PostAsync(Settings.DiscordWebhookUrl, content);
+            var response = await httpClient.PostAsync(setting.DiscordWebhookUrl, content);
 
             using (var stream = (await response.Content.ReadAsStreamAsync()))
             using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)

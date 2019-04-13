@@ -1,25 +1,31 @@
-﻿using System;
+﻿using Microsoft.Extensions.Configuration;
+using System;
 
 namespace PostDietProgress
 {
-    class Settings
+    public class Settings
     {
-        public static String TanitaUserID { get; set; }
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+            .AddJsonFile("App.config.json", optional: true)
+            .Build();
 
-        public static String TanitaUserPass { get; set; }
+        public String TanitaUserID => configuration["Setting:TanitaUserID"];
 
-        public static String TanitaClientID { get; set; }
+        public String TanitaUserPass => configuration["Setting:TanitaUserPass"];
 
-        public static String TanitaClientSecretToken { get; set; }
+        public String TanitaClientID => configuration["Setting:TanitaClientID"];
 
-        public static String TanitaOAuthToken { get; set; }
+        public String TanitaClientSecretToken => configuration["Setting:TanitaClientSecretToken"];
 
-        public static String TanitaAccessToken { get; set; }
+        public String TanitaOAuthToken { get; set; }
+
+        public String TanitaAccessToken { get; set; }
         
-        public static String DiscordWebhookUrl { get; set; }
+        public String DiscordWebhookUrl => configuration["Setting:DiscordWebhookUrl"];
 
-        public static Double OriginalWeight { get; set; }
+        public Double OriginalWeight => Double.Parse(configuration["Setting:OriginalWeight"]);
 
-        public static Double GoalWeight { get; set; }
+        public Double GoalWeight => Double.Parse(configuration["Setting:GoalWeight"]);
     }
 }
