@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using System;
+using System.Data.SQLite;
 
 namespace PostDietProgress
 {
@@ -27,5 +28,7 @@ namespace PostDietProgress
         public Double OriginalWeight => Double.Parse(configuration["Setting:OriginalWeight"]);
 
         public Double GoalWeight => Double.Parse(configuration["Setting:GoalWeight"]);
+
+        public SQLiteConnectionStringBuilder SqlConnectionSb => new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
     }
 }

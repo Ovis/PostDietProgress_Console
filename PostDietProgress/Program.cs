@@ -1,39 +1,20 @@
-﻿using Dapper;
-using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
+using PostDietProgress.Model;
 using PostDietProgress.Service;
 using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using System.Web;
 using TimeZoneConverter;
 
 namespace PostDietProgress
 {
     public static class Program
     {
-        private static readonly SQLiteConnectionStringBuilder SqlConnectionSb = new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
-
-        enum HealthTag
-        {
-            WEIGHT = 6021, /* 体重 (kg) */
-            BODYFATPERF = 6022, /* 体脂肪率(%) */
-            MUSCLEMASS = 6023, /* 筋肉量(kg) */
-            MUSCLESCORE = 6024, /* 筋肉スコア */
-            VISCERALFATLEVEL2 = 6025, /* 内臓脂肪レベル2(小数点有り、手入力含まず) */
-            VISCERALFATLEVEL = 6026, /* 内臓脂肪レベル(小数点無し、手入力含む) */
-            BASALMETABOLISM = 6027, /* 基礎代謝量(kcal) */
-            BODYAGE = 6028, /* 体内年齢(歳) */
-            BONEQUANTITY = 6029 /* 推定骨量(kg) */
-        }
-
         static async Task Main(string[] args)
         {
             var setting = new Settings();
@@ -45,59 +26,22 @@ namespace PostDietProgress
 
             var healthPlanetSvs = new HealthPlanetService(httpClient, handler, setting);
 
+            var dbSvs = new DatabaseService(setting);
+
+            /* テーブル生成 */
+            dbSvs.CreateTable();
+
             /* 前回測定日時 */
-            var previousDate = "";
+            var previousDate = dbSvs.GetPreviousDate();
 
-            /* データ保管用テーブル作成 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
+            if (previousDate != "")
             {
-                dbConn.Open();
-
-                using (var cmd = dbConn.CreateCommand())
+                if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate))
                 {
-
-                    cmd.CommandText = "CREATE TABLE IF NOT EXISTS [SETTING] (" +
-                                                          "[KEY]  TEXT NOT NULL," +
-                                                          "[VALUE] TEXT NOT NULL" +
-                                                          ");";
-                    cmd.ExecuteNonQuery();
-
-                    using (var tran = dbConn.BeginTransaction())
-                    {
-                        try
-                        {
-                            var strBuilder = new StringBuilder();
-
-                            strBuilder.AppendLine("INSERT INTO SETTING (KEY,VALUE) SELECT @Key, @Val WHERE NOT EXISTS(SELECT 1 FROM SETTING WHERE KEY = @Key)");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
-
-                            tran.Commit();
-                        }
-                        catch
-                        {
-                            tran.Rollback();
-                            return;
-                        }
-                    }
-
-                    var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'").FirstOrDefault();
-
-                    previousDate = dbObj?.Value;
-
-                    if (previousDate != "")
-                    {
-                        if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate))
-                        {
-                        }
-
-                        if (prevDate > DateTime.Now.AddHours(-6))
-                        {
-                            return;
-                        }
-                    }
+                }
+                if (prevDate > DateTime.Now.AddHours(-6))
+                {
+                    return;
                 }
             }
 
@@ -108,97 +52,41 @@ namespace PostDietProgress
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             /* 認証処理 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
+            var ret = dbSvs.GetOAuthToken();
+
+            if (ret == null)
             {
-                dbConn.Open();
+                /* ログイン処理 */
+                var htmlData = await healthPlanetSvs.LoginProcess();
 
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'OAUTHTOKEN'").FirstOrDefault();
+                doc.LoadHtml(htmlData);
 
-                if (dbObj != null && string.IsNullOrEmpty(dbObj.Value))
-                {
-                    /* ログイン処理 */
-                    var htmlData = await healthPlanetSvs.LoginProcess();
+                setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
 
-                    doc.LoadHtml(htmlData);
-
-                    setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
-
-                    using (SQLiteCommand cmd = dbConn.CreateCommand())
-                    {
-                        using (var tran = dbConn.BeginTransaction())
-                        {
-                            try
-                            {
-                                var strBuilder = new StringBuilder();
-
-                                strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                                dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = setting.TanitaOAuthToken }, tran);
-
-                                tran.Commit();
-                            }
-                            catch
-                            {
-                                tran.Rollback();
-                                return;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    if (dbObj != null)
-                    {
-                        setting.TanitaOAuthToken = dbObj.Value;
-                    }
-                    else
-                    {
-                        return;
-                    }
-                }
+                dbSvs.SetOAuthToken();
+            }
+            else
+            {
+                setting.TanitaOAuthToken = ret;
             }
 
             /*リクエストトークン取得処理 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
+            ret = dbSvs.GetAccessToken();
+
+            if (ret == null)
             {
-                dbConn.Open();
+                /* ログイン処理 */
+                doc.LoadHtml(await healthPlanetSvs.GetApprovalCode(setting.TanitaOAuthToken));
 
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'ACCESSTOKEN'").FirstOrDefault();
+                var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
 
-                if (string.IsNullOrEmpty(dbObj?.Value))
-                {
-                    /* ログイン処理 */
-                    doc.LoadHtml(await healthPlanetSvs.GetApprovalCode(setting.TanitaOAuthToken));
-
-                    var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
-
-                    /* リクエストトークン処理 */
-                    setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await healthPlanetSvs.GetAccessToken(authCode)).access_token;
-
-                    using (dbConn.CreateCommand())
-                    {
-                        using (var tran = dbConn.BeginTransaction())
-                        {
-                            try
-                            {
-                                var strBuilder = new StringBuilder();
-
-                                strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                                dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = setting.TanitaAccessToken }, tran);
-
-                                tran.Commit();
-                            }
-                            catch
-                            {
-                                tran.Rollback();
-                                return;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    setting.TanitaAccessToken = dbObj.Value;
-                }
+                /* リクエストトークン処理 */
+                setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await healthPlanetSvs.GetAccessToken(authCode)).access_token;
+                dbSvs.SetAccessToken();
+            }
+            else
+            {
+                setting.TanitaAccessToken = ret;
             }
 
             /* 身体データ取得 */
@@ -222,35 +110,10 @@ namespace PostDietProgress
             var latestHealthData = healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata);
 
             /* Discordに送信 */
-            await SendDiscord(latestHealthData, healthData.height, latestDate, previousDate, setting, httpClient);
+            await SendDiscord(latestHealthData, healthData.height, latestDate, previousDate, setting, httpClient, dbSvs);
 
             /* 前回情報をDBに登録 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
-            {
-                dbConn.Open();
-
-                using (var cmd = dbConn.CreateCommand())
-                {
-                    using (var tran = dbConn.BeginTransaction())
-                    {
-                        try
-                        {
-                            var strBuilder = new StringBuilder();
-
-                            strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = latestHealthData[((int)HealthTag.WEIGHT).ToString()] }, tran);
-
-                            tran.Commit();
-                        }
-                        catch
-                        {
-                            tran.Rollback();
-                            return;
-                        }
-                    }
-                }
-            }
+            dbSvs.SetHealthData(latestDate, latestHealthData);
         }
 
         /// <summary>
@@ -261,7 +124,7 @@ namespace PostDietProgress
         /// <param name="date">日付</param>
         /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
-        public static async Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date, string previousDate, Settings setting, HttpClient httpClient)
+        public static async Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date, string previousDate, Settings setting, HttpClient httpClient, DatabaseService dbSvs)
         {
             var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
@@ -293,20 +156,14 @@ namespace PostDietProgress
                 }
 
                 /* 前回測定データがあるならそれも投稿 */
-                using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
-                {
-                    dbConn.Open();
+                var previousWeight = double.Parse(dbSvs.GetPreviousData());
 
-                    var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSWEIGHT'").FirstOrDefault();
+                var diffWeight = Math.Round((weight - previousWeight), 2);
 
-                    var previousWeight = double.Parse(dbObj.Value);
+                postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
 
-                    var diffWeight = Math.Round((weight - previousWeight), 2);
+                postData += diffWeight >= 0 ? "増えてる・・・。" : "減った！";
 
-                    postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
-
-                    postData += diffWeight >= 0 ? "増えてる・・・。" : "減った！";
-                }
             }
 
             var jsonData = new DiscordJson
