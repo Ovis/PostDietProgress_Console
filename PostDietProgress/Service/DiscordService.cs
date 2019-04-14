@@ -27,12 +27,12 @@ namespace PostDietProgress.Service
         /// <summary>
         /// Discord投稿処理
         /// </summary>
-        /// <param name="dic">身体情報</param>
+        /// <param name="healthData">身体情報</param>
         /// <param name="height">身長</param>
         /// <param name="date">日付</param>
         /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
-        public async Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date, string previousDate)
+        public async Task<string> SendDiscord(HealthData healthData, string height, string date, string previousDate)
         {
             var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
@@ -44,7 +44,7 @@ namespace PostDietProgress.Service
 
             /* BMI */
             var cm = double.Parse(height) / 100;
-            var weight = double.Parse(dic[((int)HealthTag.WEIGHT).ToString()].ToString());
+            var weight = double.Parse(healthData.Weight);
             var bmi = Math.Round((weight / Math.Pow(cm, 2)), 2);
 
             /* 目標達成率 */
@@ -70,7 +70,7 @@ namespace PostDietProgress.Service
 
                 postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
 
-                postData += diffWeight >= 0 ? "増えてる・・・。" : "減った！";
+                postData += diffWeight >= 0 ? (diffWeight == 0 ?  "変わってない・・・。" : "増えてる・・・。") : "減った！";
 
             }
 

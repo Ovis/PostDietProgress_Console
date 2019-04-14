@@ -53,6 +53,24 @@ namespace PostDietProgress.Service
                             throw;
                         }
                     }
+
+                    var tblCreateText = new StringBuilder();
+                    var tblColumnText = new List<string>();
+                    tblCreateText.AppendLine("CREATE TABLE IF NOT EXISTS [HEALTHDATA] (");
+                    tblCreateText.AppendLine("[DATETIME] TEXT NOT NULL,");
+                    tblCreateText.AppendLine(" [WEIGHT] TEXT,");
+                    tblCreateText.AppendLine(" [BODYFATPERF] TEXT,");
+                    tblCreateText.AppendLine(" [MUSCLEMASS] TEXT,");
+                    tblCreateText.AppendLine(" [MUSCLESCORE] TEXT,");
+                    tblCreateText.AppendLine(" [VISCERALFATLEVEL2] TEXT,");
+                    tblCreateText.AppendLine(" [VISCERALFATLEVEL] TEXT,");
+                    tblCreateText.AppendLine(" [BASALMETABOLISM] TEXT,");
+                    tblCreateText.AppendLine(" [BODYAGE] TEXT,");
+                    tblCreateText.AppendLine(" [BONEQUANTITY] TEXT");
+                    tblCreateText.AppendLine(");");
+                    cmd.CommandText = tblCreateText.ToString();
+
+                    cmd.ExecuteNonQuery();
                 }
             }
         }
@@ -98,24 +116,21 @@ namespace PostDietProgress.Service
             {
                 dbConn.Open();
 
-                using (SQLiteCommand cmd = dbConn.CreateCommand())
+                using (var tran = dbConn.BeginTransaction())
                 {
-                    using (var tran = dbConn.BeginTransaction())
+                    try
                     {
-                        try
-                        {
-                            var strBuilder = new StringBuilder();
+                        var strBuilder = new StringBuilder();
 
-                            strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Setting.TanitaOAuthToken }, tran);
+                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
+                        dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Setting.TanitaOAuthToken }, tran);
 
-                            tran.Commit();
-                        }
-                        catch
-                        {
-                            tran.Rollback();
-                            throw;
-                        }
+                        tran.Commit();
+                    }
+                    catch
+                    {
+                        tran.Rollback();
+                        throw;
                     }
                 }
             }
@@ -139,54 +154,60 @@ namespace PostDietProgress.Service
             {
                 dbConn.Open();
 
-                using (dbConn.CreateCommand())
+                using (var tran = dbConn.BeginTransaction())
                 {
-                    using (var tran = dbConn.BeginTransaction())
+                    try
                     {
-                        try
-                        {
-                            var strBuilder = new StringBuilder();
+                        var strBuilder = new StringBuilder();
 
-                            strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Setting.TanitaAccessToken }, tran);
+                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
+                        dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Setting.TanitaAccessToken }, tran);
 
-                            tran.Commit();
-                        }
-                        catch
-                        {
-                            tran.Rollback();
-                            throw;
-                        }
+                        tran.Commit();
+                    }
+                    catch
+                    {
+                        tran.Rollback();
+                        throw;
                     }
                 }
             }
         }
 
-        public void SetHealthData(string latestDate,Dictionary<string,string> latestHealthData)
+        public void SetHealthData(string latestDate,HealthData healthData)
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 dbConn.Open();
 
-                using (var cmd = dbConn.CreateCommand())
+                using (var tran = dbConn.BeginTransaction())
                 {
-                    using (var tran = dbConn.BeginTransaction())
+                    try
                     {
-                        try
-                        {
-                            var strBuilder = new StringBuilder();
+                        var strBuilder = new StringBuilder();
 
-                            strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = latestHealthData[((int)HealthTag.WEIGHT).ToString()] }, tran);
+                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
+                        dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
+                        dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = healthData.Weight }, tran);
 
-                            tran.Commit();
-                        }
-                        catch
-                        {
-                            tran.Rollback();
-                            return;
-                        }
+
+                        var healthDataText = new StringBuilder();
+
+                        healthDataText.AppendLine("INSERT INTO HEALTHDATA (");
+                        healthDataText.AppendLine("DATETIME,WEIGHT,BODYFATPERF,MUSCLEMASS,MUSCLESCORE,VISCERALFATLEVEL2,VISCERALFATLEVEL,BASALMETABOLISM,BODYAGE,BONEQUANTITY");
+                        healthDataText.AppendLine(") VALUES (");
+                        healthDataText.AppendLine("@DATETIME,@WEIGHT,@BODYFATPERF,@MUSCLEMASS,@MUSCLESCORE,@VISCERALFATLEVEL2,@VISCERALFATLEVEL,@BASALMETABOLISM,@BODYAGE,@BONEQUANTITY");
+                        healthDataText.AppendLine(")");
+
+                        dbConn.Execute(healthDataText.ToString(), healthData, tran);
+
+
+                        tran.Commit();
+                    }
+                    catch
+                    {
+                        tran.Rollback();
+                        return;
                     }
                 }
             }

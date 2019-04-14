@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using PostDietProgress.Model;
 using PostDietProgress.Service;
 using System;
 using System.Globalization;
@@ -103,14 +104,14 @@ namespace PostDietProgress
             }
 
             /* Discordに送るためのデータをDictionary化 */
-            var latestHealthData = healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata);
+            var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
 
             /* Discordに送信 */
             var discordService = new DiscordService(setting,httpClient,dbSvs);
-            await discordService.SendDiscord(latestHealthData, healthData.height, latestDate, previousDate);
+            await discordService.SendDiscord(health, healthData.height, latestDate, previousDate);
 
             /* 前回情報をDBに登録 */
-            dbSvs.SetHealthData(latestDate, latestHealthData);
+            dbSvs.SetHealthData(latestDate, health);
         }
     }
 }
