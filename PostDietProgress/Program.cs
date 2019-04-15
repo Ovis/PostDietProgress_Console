@@ -1,226 +1,69 @@
-﻿using Dapper;
-using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
+using PostDietProgress.Model;
+using PostDietProgress.Service;
 using System;
-using System.Collections.Generic;
-using System.Data.SQLite;
 using System.Globalization;
-using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using System.Web;
-using TimeZoneConverter;
 
 namespace PostDietProgress
 {
     public static class Program
     {
-        enum HealthTag
-        {
-            WEIGHT = 6021, /* 体重 (kg) */
-            BODYFATPERF = 6022, /* 体脂肪率(%) */
-            MUSCLEMASS = 6023, /* 筋肉量(kg) */
-            MUSCLESCORE = 6024, /* 筋肉スコア */
-            VISCERALFATLEVEL2 = 6025, /* 内臓脂肪レベル2(小数点有り、手入力含まず) */
-            VISCERALFATLEVEL = 6026, /* 内臓脂肪レベル(小数点無し、手入力含む) */
-            BASALMETABOLISM = 6027, /* 基礎代謝量(kcal) */
-            BODYAGE = 6028, /* 体内年齢(歳) */
-            BONEQUANTITY = 6029 /* 推定骨量(kg) */
-        }
-
-        private static readonly HttpClientHandler Handler = new HttpClientHandler()
-        {
-            UseCookies = true
-        };
-        private static readonly HttpClient HttpClient = new HttpClient();
-
-        private static readonly SQLiteConnectionStringBuilder SqlConnectionSb = new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
-
         static async Task Main(string[] args)
         {
-            /* 定義ファイルからID,パスワード,ClientID、ClientTokenを取得 */
-            var basePath = AppDomain.CurrentDomain.BaseDirectory;
+            var setting = new Settings();
 
-            var configuration = new ConfigurationBuilder()
-           .SetBasePath(basePath)
-           .AddJsonFile("App.config.json", optional: true)
-           .Build();
+            var httpClient = new HttpClient();
+            var handler = new HttpClientHandler() { UseCookies = true };
+            httpClient.DefaultRequestHeaders.Add("Accept-Language", "ja-JP");
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
-            Settings.TanitaUserID = configuration["Setting:TanitaUserID"];
-            Settings.TanitaUserPass = configuration["Setting:TanitaUserPass"];
-            Settings.TanitaClientID = configuration["Setting:TanitaClientID"];
-            Settings.TanitaClientSecretToken = configuration["Setting:TanitaClientSecretToken"];
-            Settings.DiscordWebhookUrl = configuration["Setting:DiscordWebhookUrl"];
-            Settings.OriginalWeight = Double.Parse(configuration["Setting:OriginalWeight"]);
-            Settings.GoalWeight = Double.Parse(configuration["Setting:GoalWeight"]);
+            var healthPlanetSvs = new HealthPlanetService(httpClient, handler, setting);
+
+            var dbSvs = new DatabaseService(setting);
+
+            /* テーブル生成 */
+            await dbSvs.CreateTable();
 
             /* 前回測定日時 */
-            var previousDate = "";
+            var previousDate = await dbSvs.GetPreviousDate();
 
-            /* データ保管用テーブル作成 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
+            if (previousDate != "")
             {
-                dbConn.Open();
-
-                using (var cmd = dbConn.CreateCommand())
+                if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate))
                 {
-
-                    cmd.CommandText = "CREATE TABLE IF NOT EXISTS [SETTING] (" +
-                                                          "[KEY]  TEXT NOT NULL," +
-                                                          "[VALUE] TEXT NOT NULL" +
-                                                          ");";
-                    cmd.ExecuteNonQuery();
-
-                    using (var tran = dbConn.BeginTransaction())
-                    {
-                        try
-                        {
-                            var strBuilder = new StringBuilder();
-
-                            strBuilder.AppendLine("INSERT INTO SETTING (KEY,VALUE) SELECT @Key, @Val WHERE NOT EXISTS(SELECT 1 FROM SETTING WHERE KEY = @Key)");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
-
-                            tran.Commit();
-                        }
-                        catch
-                        {
-                            tran.Rollback();
-                            return;
-                        }
-                    }
-
-                    var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'").FirstOrDefault();
-
-                    previousDate = dbObj?.Value;
-
-                    if (previousDate != "")
-                    {
-                        if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate))
-                        {
-                        }
-                        
-                        if(prevDate > DateTime.Now.AddHours(-6))
-                        {
-                            return;
-                        }
-                    }
+                }
+                if (prevDate > DateTime.Now.AddHours(-6))
+                {
+                    return;
                 }
             }
 
-            /* 認証用データをスクレイピング */
-            var doc = new HtmlAgilityPack.HtmlDocument();
-
-            /* エンコードプロバイダーを登録(Shift-JIS用) */
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-
-            HttpClient.DefaultRequestHeaders.Add("Accept-Language", "ja-JP");
-            HttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-
-            /* 認証処理 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
-            {
-                dbConn.Open();
-
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'OAUTHTOKEN'").FirstOrDefault();
-
-                if (dbObj != null && string.IsNullOrEmpty(dbObj.Value))
-                {
-                    /* ログイン処理 */
-                    var htmlData = await LoginProcess();
-
-                    doc.LoadHtml(htmlData);
-
-                    Settings.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
-
-                    using (SQLiteCommand cmd = dbConn.CreateCommand())
-                    {
-                        using (var tran = dbConn.BeginTransaction())
-                        {
-                            try
-                            {
-                                var strBuilder = new StringBuilder();
-
-                                strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                                dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Settings.TanitaOAuthToken }, tran);
-
-                                tran.Commit();
-                            }
-                            catch
-                            {
-                                tran.Rollback();
-                                return;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    if (dbObj != null)
-                    {
-                        Settings.TanitaOAuthToken = dbObj.Value;
-                    }
-                    else
-                    {
-                        return;
-                    }
-                }
-            }
-
-            /*リクエストトークン取得処理 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
-            {
-                dbConn.Open();
-
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'ACCESSTOKEN'").FirstOrDefault();
-
-                if (string.IsNullOrEmpty(dbObj?.Value))
-                {
-                    /* ログイン処理 */
-                    doc.LoadHtml(await GetApprovalCode(Settings.TanitaOAuthToken));
-
-                    var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
-
-                    /* リクエストトークン処理 */
-                    Settings.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await GetAccessToken(authCode)).access_token;
-
-                    using (dbConn.CreateCommand())
-                    {
-                        using (var tran = dbConn.BeginTransaction())
-                        {
-                            try
-                            {
-                                var strBuilder = new StringBuilder();
-
-                                strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                                dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Settings.TanitaAccessToken }, tran);
-
-                                tran.Commit();
-                            }
-                            catch
-                            {
-                                tran.Rollback();
-                                return;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    Settings.TanitaAccessToken = dbObj.Value;
-                }
-            }
+            //OAuth処理
+            await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs);
 
             /* 身体データ取得 */
             /* ログイン処理 */
-
-            var healthData = JsonConvert.DeserializeObject<InnerScan>(await GetHealthData());
-
+            InnerScan healthData = null;
+            try
+            {
+                healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
+            }
+            catch
+            {
+                try
+                {
+                    await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs, true);
+                    healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
+                }
+                catch
+                {
+                    throw;
+                }
+            }
             var healthList = healthData.data;
 
             /* 最新の日付のデータを取得 */
@@ -234,223 +77,70 @@ namespace PostDietProgress
             }
 
             /* Discordに送るためのデータをDictionary化 */
-            var latestHealthData = healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata);
+            var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
 
             /* Discordに送信 */
-            await SendDiscord(latestHealthData, healthData.height, latestDate, previousDate);
+            var discordService = new DiscordService(setting, httpClient, dbSvs);
+            await discordService.SendDiscord(health, healthData.height, latestDate);
 
             /* 前回情報をDBに登録 */
-            using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
-            {
-                dbConn.Open();
-
-                using (var cmd = dbConn.CreateCommand())
-                {
-                    using (var tran = dbConn.BeginTransaction())
-                    {
-                        try
-                        {
-                            var strBuilder = new StringBuilder();
-
-                            strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = latestHealthData[((int)HealthTag.WEIGHT).ToString()] }, tran);
-
-                            tran.Commit();
-                        }
-                        catch
-                        {
-                            tran.Rollback();
-                            return;
-                        }
-                    }
-                }
-            }
-
+            await dbSvs.SetHealthData(latestDate, health);
         }
 
         /// <summary>
-        /// ログイン認証処理
+        /// HealthPlanetOAuth処理
         /// </summary>
+        /// <param name="setting"></param>
+        /// <param name="dbSvs"></param>
+        /// <param name="healthPlanetSvs"></param>
+        /// <param name="retry"></param>
         /// <returns></returns>
-        public static async Task<string> LoginProcess()
+        private static async Task OAuthProcessAsync(Settings setting, DatabaseService dbSvs, HealthPlanetService healthPlanetSvs, bool retry = false)
         {
-            /* ログイン認証先URL */
-            var authUrl = new StringBuilder();
-            authUrl.Append("https://www.healthplanet.jp/oauth/auth?");
-            authUrl.Append("client_id=" + Settings.TanitaClientID);
-            authUrl.Append("&redirect_uri=https://localhost/");
-            authUrl.Append("&scope=innerscan");
-            authUrl.Append("&response_type=code");
+            /* 認証用データをスクレイピング */
+            var doc = new HtmlAgilityPack.HtmlDocument();
 
-            var postString = new StringBuilder();
-            postString.Append("loginId=" + Settings.TanitaUserID + "&");
-            postString.Append("passwd=" + Settings.TanitaUserPass + "&");
-            postString.Append("send=1&");
-            postString.Append("url=" + HttpUtility.UrlEncode(authUrl.ToString(), Encoding.GetEncoding("shift_jis")));
+            /* エンコードプロバイダーを登録(Shift-JIS用) */
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-            var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
+            /* 認証処理 */
+            var ret = retry ? null : await dbSvs.GetOAuthToken();
 
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/login_oauth.do", contentShift);
-
-            var cookies = Handler.CookieContainer.GetCookies(new Uri("https://www.healthplanet.jp/"));
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
+            if (ret == null)
             {
-                return await reader.ReadToEndAsync();
+                /* ログイン処理 */
+                var htmlData = await healthPlanetSvs.LoginProcess();
+
+                doc.LoadHtml(htmlData);
+
+                setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
+
+                await dbSvs.SetOAuthToken();
             }
-        }
-
-        /// <summary>
-        /// トークン取得コード取得
-        /// </summary>
-        /// <param name="oAuthToken"></param>
-        /// <returns></returns>
-        public static async Task<string> GetApprovalCode(string oAuthToken)
-        {
-            var postString = new StringBuilder();
-            postString.Append("approval=true&");
-            postString.Append("oauth_token=" + oAuthToken + "&");
-
-            var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
-
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/oauth/approval.do", contentShift);
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
+            else
             {
-                return await reader.ReadToEndAsync();
-            }
-        }
-
-        /// <summary>
-        /// アクセストークン取得
-        /// </summary>
-        /// <param name="oAuthToken"></param>
-        /// <returns></returns>
-        public static async Task<string> GetAccessToken(string oAuthToken)
-        {
-            var postString = new StringBuilder();
-            postString.Append("client_id=" + Settings.TanitaClientID + "&");
-            postString.Append("client_secret=" + Settings.TanitaClientSecretToken + "&");
-            postString.Append("redirect_uri=" + HttpUtility.UrlEncode("http://localhost/", Encoding.GetEncoding("shift_jis")) + "&");
-            postString.Append("code=" + oAuthToken + "&");
-            postString.Append("grant_type=authorization_code");
-
-            var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
-
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/oauth/token", contentShift);
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
-        }
-
-        /// <summary>
-        /// 身体データ取得
-        /// </summary>
-        /// <returns></returns>
-        public static async Task<string> GetHealthData()
-        {
-            var postString = new StringBuilder();
-            /* アクセストークン */
-            postString.Append("access_token=" + Settings.TanitaAccessToken + "&");
-            /* 測定日付で取得 */
-            postString.Append("date=1&");
-            /* 取得期間From,To */
-            var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
-            postString.Append("from=" + localTime.AddMonths(-3).ToString("yyyyMMdd") + "000000" + "&");
-            postString.Append("to=" + localTime.ToString("yyyyMMdd") + "235959" + "&");
-            /* 取得データ */
-            postString.Append("tag=6021,6022,6023,6024,6025,6026,6027,6028,6029" + "&");
-
-            var contentShift = new StringContent(postString.ToString(), Encoding.UTF8, "application/x-www-form-urlencoded");
-
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/status/innerscan.json", contentShift);
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
-        }
-
-        /// <summary>
-        /// Discord投稿処理
-        /// </summary>
-        /// <param name="dic">身体情報</param>
-        /// <param name="height">身長</param>
-        /// <param name="date">日付</param>
-        /// <param name="previousDate">前回測定日付</param>
-        /// <returns></returns>
-        public static async Task<string> SendDiscord(Dictionary<String, String> dic, string height, string date, string previousDate)
-        {
-            var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
-
-            if (!DateTime.TryParseExact(date, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var dt))
-            {
-                dt = localTime;
+                setting.TanitaOAuthToken = ret;
             }
 
-            /* BMI */
-            var cm = double.Parse(height) / 100;
-            var weight = double.Parse(dic[((int)HealthTag.WEIGHT).ToString()].ToString());
-            var bmi = Math.Round((weight / Math.Pow(cm, 2)), 2);
+            /*リクエストトークン取得処理 */
+            ret = retry ? null : await dbSvs.GetAccessToken();
 
-            /* 目標達成率 */
-            var goal = Math.Round(((1 - (weight - Settings.GoalWeight) / (Settings.OriginalWeight - Settings.GoalWeight)) * 100), 2);
-
-            /* 投稿文章 */
-            var postData = dt.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + "のダイエット進捗" + Environment.NewLine
-                          + "現在の体重:" + weight + "kg" + Environment.NewLine
-                          + "BMI:" + bmi + Environment.NewLine
-                          + "目標達成率:" + goal + "%" + Environment.NewLine;
-
-            if (previousDate != "")
+            if (ret == null)
             {
-                var prevDate = new DateTime();
-                if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out prevDate))
-                {
-                }
+                /* ログイン処理 */
+                doc.LoadHtml(await healthPlanetSvs.GetApprovalCode(setting.TanitaOAuthToken));
 
-                /* 前回測定データがあるならそれも投稿 */
-                using (var dbConn = new SQLiteConnection(SqlConnectionSb.ToString()))
-                {
-                    dbConn.Open();
+                var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
 
-                    var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSWEIGHT'").FirstOrDefault();
-
-                    var previousWeight = double.Parse(dbObj.Value);
-
-                    var diffWeight = Math.Round((weight - previousWeight), 2);
-
-                    postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
-
-                    postData += diffWeight >= 0 ? "増えてる・・・。" : "減った！";
-                }
+                /* リクエストトークン処理 */
+                setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await healthPlanetSvs.GetAccessToken(authCode)).access_token;
+                await dbSvs.SetAccessToken();
+            }
+            else
+            {
+                setting.TanitaAccessToken = ret;
             }
 
-            var jsonData = new DiscordJson
-            {
-                content = postData
-            };
-
-            var json = JsonConvert.SerializeObject(jsonData);
-
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await HttpClient.PostAsync(Settings.DiscordWebhookUrl, content);
-
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
         }
     }
 }
