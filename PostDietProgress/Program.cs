@@ -42,6 +42,61 @@ namespace PostDietProgress
                 }
             }
 
+            //OAuth処理
+            await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs);
+
+            /* 身体データ取得 */
+            /* ログイン処理 */
+            InnerScan healthData = null;
+            try
+            {
+                healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
+            }
+            catch
+            {
+                try
+                {
+                    await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs, true);
+                    healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
+                }
+                catch
+                {
+                    throw;
+                }
+            }
+            var healthList = healthData.data;
+
+            /* 最新の日付のデータを取得 */
+            healthList.Sort((a, b) => string.Compare(b.date, a.date));
+            var latestDate = healthList.First().date.ToString();
+
+            if (latestDate.Equals(previousDate))
+            {
+                //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                return;
+            }
+
+            /* Discordに送るためのデータをDictionary化 */
+            var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
+
+            /* Discordに送信 */
+            var discordService = new DiscordService(setting, httpClient, dbSvs);
+            await discordService.SendDiscord(health, healthData.height, latestDate);
+
+            /* 前回情報をDBに登録 */
+            await dbSvs.SetHealthData(latestDate, health);
+        }
+
+        /// <summary>
+        /// HealthPlanetOAuth処理
+        /// </summary>
+        /// <param name="setting"></param>
+        /// <param name="dbSvs"></param>
+        /// <param name="healthPlanetSvs"></param>
+        /// <param name="retry"></param>
+        /// <returns></returns>
+        private static async Task OAuthProcessAsync(Settings setting, DatabaseService dbSvs, HealthPlanetService healthPlanetSvs, bool retry = false)
+        {
             /* 認証用データをスクレイピング */
             var doc = new HtmlAgilityPack.HtmlDocument();
 
@@ -49,7 +104,7 @@ namespace PostDietProgress
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             /* 認証処理 */
-            var ret = await dbSvs.GetOAuthToken();
+            var ret = retry ? null : await dbSvs.GetOAuthToken();
 
             if (ret == null)
             {
@@ -68,7 +123,7 @@ namespace PostDietProgress
             }
 
             /*リクエストトークン取得処理 */
-            ret = await dbSvs.GetAccessToken();
+            ret = retry ? null : await dbSvs.GetAccessToken();
 
             if (ret == null)
             {
@@ -86,32 +141,6 @@ namespace PostDietProgress
                 setting.TanitaAccessToken = ret;
             }
 
-            /* 身体データ取得 */
-            /* ログイン処理 */
-
-            var healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
-
-            var healthList = healthData.data;
-
-            /* 最新の日付のデータを取得 */
-            healthList.Sort((a, b) => string.Compare(b.date, a.date));
-            var latestDate = healthList.First().date.ToString();
-
-            if (latestDate.Equals(previousDate))
-            {
-                //前回から計測日が変わっていない(=計測してない)ので処理を終了
-                return;
-            }
-
-            /* Discordに送るためのデータをDictionary化 */
-            var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
-
-            /* Discordに送信 */
-            var discordService = new DiscordService(setting,httpClient,dbSvs);
-            await discordService.SendDiscord(health, healthData.height, latestDate, previousDate);
-
-            /* 前回情報をDBに登録 */
-            await dbSvs.SetHealthData(latestDate, health);
         }
     }
 }

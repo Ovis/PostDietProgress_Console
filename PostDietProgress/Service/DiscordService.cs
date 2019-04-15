@@ -1,7 +1,6 @@
 ﻿using Newtonsoft.Json;
 using PostDietProgress.Model;
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
@@ -32,7 +31,7 @@ namespace PostDietProgress.Service
         /// <param name="date">日付</param>
         /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
-        public async Task<string> SendDiscord(HealthData healthData, string height, string date, string previousDate)
+        public async Task<string> SendDiscord(HealthData healthData, string height, string date)
         {
             var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
@@ -56,23 +55,20 @@ namespace PostDietProgress.Service
                           + "BMI:" + bmi + Environment.NewLine
                           + "目標達成率:" + goal + "%" + Environment.NewLine;
 
-            if (previousDate != "")
+            /* 前回測定データがあるならそれも投稿 */
+            var previousHealthData = await DBSvs.GetPreviousData(healthData.DateTime, localTime);
+
+            if (previousHealthData != null)
             {
-                /* 前回測定データがあるならそれも投稿 */
-                var previousHealthData = await DBSvs.GetPreviousData(healthData.DateTime, localTime);
+                var previousWeight = double.Parse(previousHealthData.Weight);
 
-                if(previousHealthData != null)
-                {
-                    var previousWeight = double.Parse(previousHealthData.Weight);
+                var diffWeight = Math.Round((weight - previousWeight), 2);
 
-                    var diffWeight = Math.Round((weight - previousWeight), 2);
+                DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime prevDate);
 
-                    DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime prevDate);
+                postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
 
-                    postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
-
-                    postData += diffWeight >= 0 ? (diffWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
-                }
+                postData += diffWeight >= 0 ? (diffWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
             }
 
             var jsonData = new DiscordJson
