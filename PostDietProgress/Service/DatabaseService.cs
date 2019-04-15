@@ -3,8 +3,10 @@ using PostDietProgress.Model;
 using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
+using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace PostDietProgress.Service
 {
@@ -213,15 +215,32 @@ namespace PostDietProgress.Service
             }
         }
 
-        public string GetPreviousData()
+        public async Task<HealthData> GetPreviousData(string dateTime, DateTime now)
         {
+            if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime thisTime))
+            {
+                thisTime = now;
+            }
+
+            var searchStartDateHour = thisTime.AddDays(-1).AddHours(-3).ToString("yyyyMMddHHmm");
+            var searchEndDateHour = thisTime.AddDays(-1).AddHours(3).ToString("yyyyMMddHHmm");
+
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 dbConn.Open();
 
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSWEIGHT'").FirstOrDefault();
+                var sql = "SELECT * FROM HEALTHDATA WHERE DATETIME BETWEEN @START AND @END";
+                try
+                {
+                    var dbObj = await dbConn.QueryAsync<HealthData>(sql,new { Start = searchStartDateHour, End = searchEndDateHour });
+                    return dbObj.FirstOrDefault();
+                }
+                catch (Exception e)
+                {
 
-                return dbObj?.Value;
+                    throw;
+                }
+           
             }
         }
     }

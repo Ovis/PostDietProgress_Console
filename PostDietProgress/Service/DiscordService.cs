@@ -58,20 +58,21 @@ namespace PostDietProgress.Service
 
             if (previousDate != "")
             {
-                var prevDate = new DateTime();
-                if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out prevDate))
-                {
-                }
-
                 /* 前回測定データがあるならそれも投稿 */
-                var previousWeight = double.Parse(DBSvs.GetPreviousData());
+                var previousHealthData = await DBSvs.GetPreviousData(healthData.DateTime, localTime);
 
-                var diffWeight = Math.Round((weight - previousWeight), 2);
+                if(previousHealthData != null)
+                {
+                    var previousWeight = double.Parse(previousHealthData.Weight);
 
-                postData += "前回測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
+                    var diffWeight = Math.Round((weight - previousWeight), 2);
 
-                postData += diffWeight >= 0 ? (diffWeight == 0 ?  "変わってない・・・。" : "増えてる・・・。") : "減った！";
+                    DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime prevDate);
 
+                    postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
+
+                    postData += diffWeight >= 0 ? (diffWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
+                }
             }
 
             var jsonData = new DiscordJson
