@@ -26,10 +26,10 @@ namespace PostDietProgress
             var dbSvs = new DatabaseService(setting);
 
             /* テーブル生成 */
-            dbSvs.CreateTable();
+            await dbSvs.CreateTable();
 
             /* 前回測定日時 */
-            var previousDate = dbSvs.GetPreviousDate();
+            var previousDate = await dbSvs.GetPreviousDate();
 
             if (previousDate != "")
             {
@@ -49,7 +49,7 @@ namespace PostDietProgress
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             /* 認証処理 */
-            var ret = dbSvs.GetOAuthToken();
+            var ret = await dbSvs.GetOAuthToken();
 
             if (ret == null)
             {
@@ -60,7 +60,7 @@ namespace PostDietProgress
 
                 setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
 
-                dbSvs.SetOAuthToken();
+                await dbSvs.SetOAuthToken();
             }
             else
             {
@@ -68,7 +68,7 @@ namespace PostDietProgress
             }
 
             /*リクエストトークン取得処理 */
-            ret = dbSvs.GetAccessToken();
+            ret = await dbSvs.GetAccessToken();
 
             if (ret == null)
             {
@@ -79,7 +79,7 @@ namespace PostDietProgress
 
                 /* リクエストトークン処理 */
                 setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await healthPlanetSvs.GetAccessToken(authCode)).access_token;
-                dbSvs.SetAccessToken();
+                await dbSvs.SetAccessToken();
             }
             else
             {
@@ -111,7 +111,7 @@ namespace PostDietProgress
             await discordService.SendDiscord(health, healthData.height, latestDate, previousDate);
 
             /* 前回情報をDBに登録 */
-            dbSvs.SetHealthData(latestDate, health);
+            await dbSvs.SetHealthData(latestDate, health);
         }
     }
 }

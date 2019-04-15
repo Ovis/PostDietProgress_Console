@@ -18,14 +18,12 @@ namespace PostDietProgress.Service
             Setting = setting;
         }
 
-
-        public void CreateTable()
+        public async Task CreateTable()
         {
             /* データ保管用テーブル作成 */
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 dbConn.Open();
-
                 using (var cmd = dbConn.CreateCommand())
                 {
 
@@ -33,7 +31,7 @@ namespace PostDietProgress.Service
                                                           "[KEY]  TEXT NOT NULL," +
                                                           "[VALUE] TEXT NOT NULL" +
                                                           ");";
-                    cmd.ExecuteNonQuery();
+                    await cmd.ExecuteNonQueryAsync();
 
                     using (var tran = dbConn.BeginTransaction())
                     {
@@ -42,10 +40,10 @@ namespace PostDietProgress.Service
                             var strBuilder = new StringBuilder();
 
                             strBuilder.AppendLine("INSERT INTO SETTING (KEY,VALUE) SELECT @Key, @Val WHERE NOT EXISTS(SELECT 1 FROM SETTING WHERE KEY = @Key)");
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
-                            dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
 
                             tran.Commit();
                         }
@@ -57,7 +55,6 @@ namespace PostDietProgress.Service
                     }
 
                     var tblCreateText = new StringBuilder();
-                    var tblColumnText = new List<string>();
                     tblCreateText.AppendLine("CREATE TABLE IF NOT EXISTS [HEALTHDATA] (");
                     tblCreateText.AppendLine("[DATETIME] TEXT NOT NULL,");
                     tblCreateText.AppendLine(" [WEIGHT] TEXT,");
@@ -72,22 +69,20 @@ namespace PostDietProgress.Service
                     tblCreateText.AppendLine(");");
                     cmd.CommandText = tblCreateText.ToString();
 
-                    cmd.ExecuteNonQuery();
+                    await cmd.ExecuteNonQueryAsync();
                 }
             }
         }
 
-        public string GetPreviousDate()
+        public async Task<string> GetPreviousDate()
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
-
                 try
                 {
                     using (var cmd = dbConn.CreateCommand())
                     {
-                        var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'").FirstOrDefault();
+                        var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'")).FirstOrDefault();
 
                         return dbObj?.Value;
                     }
@@ -100,24 +95,20 @@ namespace PostDietProgress.Service
             }
         }
 
-        public string GetOAuthToken()
+        public async Task<string> GetOAuthToken()
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
-
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'OAUTHTOKEN'").FirstOrDefault();
+                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'OAUTHTOKEN'")).FirstOrDefault();
 
                 return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
             }
         }
 
-        public void SetOAuthToken()
+        public async Task SetOAuthToken()
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
-
                 using (var tran = dbConn.BeginTransaction())
                 {
                     try
@@ -125,7 +116,7 @@ namespace PostDietProgress.Service
                         var strBuilder = new StringBuilder();
 
                         strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        dbConn.Execute(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Setting.TanitaOAuthToken }, tran);
+                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Setting.TanitaOAuthToken }, tran);
 
                         tran.Commit();
                     }
@@ -138,24 +129,20 @@ namespace PostDietProgress.Service
             }
         }
 
-        public string GetAccessToken()
+        public async Task<string> GetAccessToken()
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
-
-                var dbObj = dbConn.Query<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'ACCESSTOKEN'").FirstOrDefault();
+                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'ACCESSTOKEN'")).FirstOrDefault();
 
                 return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
             }
         }
 
-        public void SetAccessToken()
+        public async Task SetAccessToken()
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
-
                 using (var tran = dbConn.BeginTransaction())
                 {
                     try
@@ -163,7 +150,7 @@ namespace PostDietProgress.Service
                         var strBuilder = new StringBuilder();
 
                         strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        dbConn.Execute(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Setting.TanitaAccessToken }, tran);
+                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Setting.TanitaAccessToken }, tran);
 
                         tran.Commit();
                     }
@@ -176,12 +163,11 @@ namespace PostDietProgress.Service
             }
         }
 
-        public void SetHealthData(string latestDate,HealthData healthData)
+        public async Task SetHealthData(string latestDate, HealthData healthData)
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 dbConn.Open();
-
                 using (var tran = dbConn.BeginTransaction())
                 {
                     try
@@ -189,8 +175,8 @@ namespace PostDietProgress.Service
                         var strBuilder = new StringBuilder();
 
                         strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
-                        dbConn.Execute(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = healthData.Weight }, tran);
+                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
+                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = healthData.Weight }, tran);
 
 
                         var healthDataText = new StringBuilder();
@@ -201,8 +187,7 @@ namespace PostDietProgress.Service
                         healthDataText.AppendLine("@DATETIME,@WEIGHT,@BODYFATPERF,@MUSCLEMASS,@MUSCLESCORE,@VISCERALFATLEVEL2,@VISCERALFATLEVEL,@BASALMETABOLISM,@BODYAGE,@BONEQUANTITY");
                         healthDataText.AppendLine(")");
 
-                        dbConn.Execute(healthDataText.ToString(), healthData, tran);
-
+                        await dbConn.ExecuteAsync(healthDataText.ToString(), healthData, tran);
 
                         tran.Commit();
                     }
@@ -227,20 +212,17 @@ namespace PostDietProgress.Service
 
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
-
                 var sql = "SELECT * FROM HEALTHDATA WHERE DATETIME BETWEEN @START AND @END";
                 try
                 {
-                    var dbObj = await dbConn.QueryAsync<HealthData>(sql,new { Start = searchStartDateHour, End = searchEndDateHour });
+                    var dbObj = await dbConn.QueryAsync<HealthData>(sql, new { Start = searchStartDateHour, End = searchEndDateHour });
                     return dbObj.FirstOrDefault();
                 }
-                catch (Exception e)
+                catch
                 {
-
                     throw;
                 }
-           
+
             }
         }
     }
