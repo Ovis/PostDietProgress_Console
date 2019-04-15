@@ -23,7 +23,7 @@ namespace PostDietProgress.Service
             /* データ保管用テーブル作成 */
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
+                await dbConn.OpenAsync();
                 using (var cmd = dbConn.CreateCommand())
                 {
 
@@ -109,6 +109,7 @@ namespace PostDietProgress.Service
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
+                await dbConn.OpenAsync();
                 using (var tran = dbConn.BeginTransaction())
                 {
                     try
@@ -143,6 +144,7 @@ namespace PostDietProgress.Service
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
+                await dbConn.OpenAsync();
                 using (var tran = dbConn.BeginTransaction())
                 {
                     try
@@ -167,7 +169,7 @@ namespace PostDietProgress.Service
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                dbConn.Open();
+                await dbConn.OpenAsync();
                 using (var tran = dbConn.BeginTransaction())
                 {
                     try
