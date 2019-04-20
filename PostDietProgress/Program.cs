@@ -32,6 +32,8 @@ namespace PostDietProgress
 
             if (args.Length == 0)
             {
+                var discordService = new DiscordService(setting, httpClient, dbSvs);
+
                 /* 前回測定日時 */
                 var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
 
@@ -74,8 +76,8 @@ namespace PostDietProgress
                 var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
 
                 /* Discordに送信 */
-                var discordService = new DiscordService(setting, httpClient, dbSvs);
-                await discordService.SendDiscord(health, healthData.height, latestDate);
+                var sendData = await discordService.CreateSendDataAsync(health, healthData.height, latestDate);
+                await discordService.SendDiscordAsync(sendData);
 
                 /* 前回情報をDBに登録 */
                 await dbSvs.SetHealthData(latestDate, health);

@@ -150,7 +150,7 @@ namespace PostDietProgress.Service
             }
         }
 
-        public async Task<HealthData> GetPreviousData(string dateTime, DateTime now)
+        public async Task<HealthData> GetPreviousDataAsync(string dateTime, DateTime now)
         {
             if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime thisTime))
             {

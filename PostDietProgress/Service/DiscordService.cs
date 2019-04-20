@@ -31,7 +31,7 @@ namespace PostDietProgress.Service
         /// <param name="date">日付</param>
         /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
-        public async Task<string> SendDiscord(HealthData healthData, string height, string date)
+        public async Task<string> CreateSendDataAsync(HealthData healthData, string height, string date)
         {
             var jst = new CultureInfo("ja-JP");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
@@ -56,7 +56,7 @@ namespace PostDietProgress.Service
                           + "目標達成率:" + goal + "%" + Environment.NewLine;
 
             /* 前回測定データがあるならそれも投稿 */
-            var previousHealthData = await DBSvs.GetPreviousData(healthData.DateTime, localTime);
+            var previousHealthData = await DBSvs.GetPreviousDataAsync(healthData.DateTime, localTime);
 
             if (previousHealthData != null)
             {
@@ -71,9 +71,14 @@ namespace PostDietProgress.Service
                 postData += diffWeight >= 0 ? (diffWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
             }
 
+            return postData;
+        }
+
+        public async Task SendDiscordAsync(string sendData)
+        {
             var jsonData = new DiscordJson
             {
-                content = postData
+                content = sendData
             };
 
             var json = JsonConvert.SerializeObject(jsonData);
@@ -85,7 +90,7 @@ namespace PostDietProgress.Service
             using (var stream = (await response.Content.ReadAsStreamAsync()))
             using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
             {
-                return await reader.ReadToEndAsync();
+                await reader.ReadToEndAsync();
             }
         }
     }
