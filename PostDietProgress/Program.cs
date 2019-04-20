@@ -27,13 +27,11 @@ namespace PostDietProgress
             await dbSvs.CreateTable();
 
             /* 前回測定日時 */
-            var previousDate = await dbSvs.GetPreviousDate();
+            var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
 
-            if (previousDate != "")
+            if (!string.IsNullOrEmpty(previousDate))
             {
-                if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate))
-                {
-                }
+                DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate);
                 if (prevDate > DateTime.Now.AddHours(-6))
                 {
                     return;

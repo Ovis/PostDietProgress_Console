@@ -43,7 +43,7 @@ namespace PostDietProgress.Service
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             /* 認証処理 */
-            var ret = retry ? null : await DbSvs.GetOAuthToken();
+            var ret = retry ? null : await DbSvs.GetSettingDbVal(SettingDbEnum.OAuthToken);
 
             if (ret == null)
             {
@@ -54,7 +54,7 @@ namespace PostDietProgress.Service
 
                 Setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
 
-                await DbSvs.SetOAuthToken();
+                await DbSvs.SetSettingDbVal(SettingDbEnum.OAuthToken, Setting.TanitaOAuthToken);
             }
             else
             {
@@ -62,7 +62,7 @@ namespace PostDietProgress.Service
             }
 
             /*リクエストトークン取得処理 */
-            ret = retry ? null : await DbSvs.GetAccessToken();
+            ret = retry ? null : await DbSvs.GetSettingDbVal(SettingDbEnum.AccessToken);
 
             if (ret == null)
             {
@@ -73,7 +73,7 @@ namespace PostDietProgress.Service
 
                 /* リクエストトークン処理 */
                 Setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await GetAccessToken(authCode)).access_token;
-                await DbSvs.SetAccessToken();
+                await DbSvs.SetSettingDbVal(SettingDbEnum.AccessToken, Setting.TanitaAccessToken);
             }
             else
             {

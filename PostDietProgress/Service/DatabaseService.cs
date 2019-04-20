@@ -41,6 +41,8 @@ namespace PostDietProgress.Service
                             strBuilder.AppendLine("INSERT INTO SETTING (KEY,VALUE) SELECT @Key, @Val WHERE NOT EXISTS(SELECT 1 FROM SETTING WHERE KEY = @Key)");
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "EXPIRESIN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "REFRESHTOKEN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
 
@@ -73,39 +75,22 @@ namespace PostDietProgress.Service
             }
         }
 
-        public async Task<string> GetPreviousDate()
+        public async Task<string> GetSettingDbVal(SettingDbEnum keyType)
         {
+            var key = GetDbKey(keyType);
+
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                try
-                {
-                    using (var cmd = dbConn.CreateCommand())
-                    {
-                        var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'")).FirstOrDefault();
-
-                        return dbObj?.Value;
-                    }
-                }
-                catch (Exception)
-                {
-
-                    throw;
-                }
-            }
-        }
-
-        public async Task<string> GetOAuthToken()
-        {
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
-            {
-                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'OAUTHTOKEN'")).FirstOrDefault();
+                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = '" + key + "'")).FirstOrDefault();
 
                 return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
             }
         }
 
-        public async Task SetOAuthToken()
+        public async Task SetSettingDbVal(SettingDbEnum keyType, string val)
         {
+            var key = GetDbKey(keyType);
+
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 await dbConn.OpenAsync();
@@ -116,42 +101,7 @@ namespace PostDietProgress.Service
                         var strBuilder = new StringBuilder();
 
                         strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Setting.TanitaOAuthToken }, tran);
-
-                        tran.Commit();
-                    }
-                    catch
-                    {
-                        tran.Rollback();
-                        throw;
-                    }
-                }
-            }
-        }
-
-        public async Task<string> GetAccessToken()
-        {
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
-            {
-                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'ACCESSTOKEN'")).FirstOrDefault();
-
-                return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
-            }
-        }
-
-        public async Task SetAccessToken()
-        {
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
-            {
-                await dbConn.OpenAsync();
-                using (var tran = dbConn.BeginTransaction())
-                {
-                    try
-                    {
-                        var strBuilder = new StringBuilder();
-
-                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Setting.TanitaAccessToken }, tran);
+                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = key, Val = val }, tran);
 
                         tran.Commit();
                     }
@@ -225,6 +175,33 @@ namespace PostDietProgress.Service
                 }
 
             }
+        }
+
+        public string GetDbKey(SettingDbEnum keyType)
+        {
+            var key = "";
+            switch (keyType)
+            {
+                case SettingDbEnum.PreviousMeasurememtDate:
+                    key = "PREVIOUSMEASUREMENTDATE";
+                    break;
+                case SettingDbEnum.OAuthToken:
+                    key = "OAUTHTOKEN";
+                    break;
+                case SettingDbEnum.AccessToken:
+                    key = "ACCESSTOKEN";
+                    break;
+                case SettingDbEnum.ExpiresIn:
+                    key = "EXPIRESIN";
+                    break;
+                case SettingDbEnum.RefreshToken:
+                    key = "REFRESHTOKEN";
+                    break;
+                default:
+                    break;
+            }
+
+            return key;
         }
     }
 }
