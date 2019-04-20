@@ -15,6 +15,7 @@ namespace PostDietProgress
         PreviousMeasurememtDate,
         RequestToken,
         ExpiresIn,
-        RefreshToken
+        RefreshToken,
+        ErrorFlag
     }
 }

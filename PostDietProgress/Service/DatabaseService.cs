@@ -44,6 +44,7 @@ namespace PostDietProgress.Service
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "REFRESHTOKEN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ERRORFLAG", Val = "0" }, tran);
 
                             tran.Commit();
                         }
@@ -192,6 +193,9 @@ namespace PostDietProgress.Service
                     break;
                 case SettingDbEnum.RefreshToken:
                     key = "REFRESHTOKEN";
+                    break;
+                case SettingDbEnum.ErrorFlag:
+                    key = "ERRORFLAG";
                     break;
                 default:
                     break;

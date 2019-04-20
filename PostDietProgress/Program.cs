@@ -34,6 +34,14 @@ namespace PostDietProgress
             {
                 var discordService = new DiscordService(setting, httpClient, dbSvs);
 
+                /* エラーフラグ確認 */
+                var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);
+
+                if(errorFlag == "1")
+                {
+                    return;
+                }
+
                 /* 前回測定日時 */
                 var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
 
@@ -58,6 +66,7 @@ namespace PostDietProgress
                 catch
                 {
                     await discordService.SendDiscordAsync("身体データの取得に失敗しました。トークンの有効期限が切れた可能性があります。");
+                    await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "1");
                     throw;
                 }
 
@@ -89,6 +98,7 @@ namespace PostDietProgress
                 var passwd = args[1];
                 //初期処理
                 await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
+                await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
                 Console.WriteLine("初期処理が完了しました。");
                 return;
             }
