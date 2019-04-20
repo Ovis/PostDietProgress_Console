@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+using TimeZoneConverter;
 
 namespace PostDietProgress
 {
@@ -23,66 +24,75 @@ namespace PostDietProgress
 
             var healthPlanetSvs = new HealthPlanetService(httpClient, handler, dbSvs, setting);
 
+            /* 現在時刻(日本時間)取得 */
+            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
+
             /* テーブル生成 */
             await dbSvs.CreateTable();
 
-            /* 前回測定日時 */
-            var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
-
-            if (!string.IsNullOrEmpty(previousDate))
+            if (args.Length == 0)
             {
-                DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate);
-                if (prevDate > DateTime.Now.AddHours(-6))
+                /* 前回測定日時 */
+                var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
+
+                if (!string.IsNullOrEmpty(previousDate))
                 {
-                    return;
+                    DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var prevDate);
+                    if (prevDate > localTime.AddHours(-6))
+                    {
+                        return;
+                    }
                 }
-            }
 
-            //OAuth処理
-            await healthPlanetSvs.OAuthProcessAsync();
+                //リクエストトークン取得
+                await healthPlanetSvs.GetHealthPlanetToken();
 
-            /* 身体データ取得 */
-            /* ログイン処理 */
-            InnerScan healthData = null;
-            try
-            {
-                healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
-            }
-            catch
-            {
+                /* 身体データ取得 */
+                InnerScan healthData = null;
                 try
                 {
-                    await healthPlanetSvs.OAuthProcessAsync(true);
-                    healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
+                    healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
                 }
                 catch
                 {
                     throw;
                 }
+
+                var healthList = healthData.data;
+
+                /* 最新の日付のデータを取得 */
+                healthList.Sort((a, b) => string.Compare(b.date, a.date));
+                var latestDate = healthList.First().date.ToString();
+
+                if (latestDate.Equals(previousDate))
+                {
+                    //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                    return;
+                }
+
+                /* Discordに送るためのデータをDictionary化 */
+                var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
+
+                /* Discordに送信 */
+                var discordService = new DiscordService(setting, httpClient, dbSvs);
+                await discordService.SendDiscord(health, healthData.height, latestDate);
+
+                /* 前回情報をDBに登録 */
+                await dbSvs.SetHealthData(latestDate, health);
             }
-            var healthList = healthData.data;
-
-            /* 最新の日付のデータを取得 */
-            healthList.Sort((a, b) => string.Compare(b.date, a.date));
-            var latestDate = healthList.First().date.ToString();
-
-            if (latestDate.Equals(previousDate))
+            else if (args.Length == 2)
             {
-                //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                var userId = args[0];
+                var passwd = args[1];
+                //初期処理
+                await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
+                Console.WriteLine("初期処理が完了しました。");
                 return;
             }
-
-            /* Discordに送るためのデータをDictionary化 */
-            var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
-
-            /* Discordに送信 */
-            var discordService = new DiscordService(setting, httpClient, dbSvs);
-            await discordService.SendDiscord(health, healthData.height, latestDate);
-
-            /* 前回情報をDBに登録 */
-            await dbSvs.SetHealthData(latestDate, health);
+            else
+            {
+                Console.WriteLine("引数の個数が誤っています。");
+            }
         }
-
-
     }
 }

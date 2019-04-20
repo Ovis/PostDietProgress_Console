@@ -13,8 +13,7 @@ namespace PostDietProgress
     public enum SettingDbEnum
     {
         PreviousMeasurememtDate,
-        OAuthToken,
-        AccessToken,
+        RequestToken,
         ExpiresIn,
         RefreshToken
     }

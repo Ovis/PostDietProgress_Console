@@ -39,8 +39,7 @@ namespace PostDietProgress.Service
                             var strBuilder = new StringBuilder();
 
                             strBuilder.AppendLine("INSERT INTO SETTING (KEY,VALUE) SELECT @Key, @Val WHERE NOT EXISTS(SELECT 1 FROM SETTING WHERE KEY = @Key)");
-                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
-                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "REQUESTTOKEN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "EXPIRESIN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "REFRESHTOKEN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
@@ -185,11 +184,8 @@ namespace PostDietProgress.Service
                 case SettingDbEnum.PreviousMeasurememtDate:
                     key = "PREVIOUSMEASUREMENTDATE";
                     break;
-                case SettingDbEnum.OAuthToken:
-                    key = "OAUTHTOKEN";
-                    break;
-                case SettingDbEnum.AccessToken:
-                    key = "ACCESSTOKEN";
+                case SettingDbEnum.RequestToken:
+                    key = "REQUESTTOKEN";
                     break;
                 case SettingDbEnum.ExpiresIn:
                     key = "EXPIRESIN";

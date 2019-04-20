@@ -33,8 +33,8 @@ namespace PostDietProgress.Service
         /// <returns></returns>
         public async Task<string> SendDiscord(HealthData healthData, string height, string date)
         {
-            var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
+            var jst = new CultureInfo("ja-JP");
+            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
 
             if (!DateTime.TryParseExact(date, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var dt))
             {
@@ -64,7 +64,7 @@ namespace PostDietProgress.Service
 
                 var diffWeight = Math.Round((weight - previousWeight), 2);
 
-                DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime prevDate);
+                DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", jst, DateTimeStyles.AssumeLocal, out DateTime prevDate);
 
                 postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
 

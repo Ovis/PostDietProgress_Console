@@ -1,7 +1,5 @@
 ﻿{
   "Setting": {
-    "TanitaUserID": "",
-    "TanitaUserPass": "",
     "TanitaClientID": "",
     "TanitaClientSecretToken": "",
     "DiscordWebhookUrl": "https://discordapp.com/api/webhooks/????????",
