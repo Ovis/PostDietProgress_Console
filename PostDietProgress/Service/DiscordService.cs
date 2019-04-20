@@ -24,7 +24,7 @@ namespace PostDietProgress.Service
         }
 
         /// <summary>
-        /// Discord投稿処理
+        /// Discord投稿データ作成処理
         /// </summary>
         /// <param name="healthData">身体情報</param>
         /// <param name="height">身長</param>
@@ -74,6 +74,11 @@ namespace PostDietProgress.Service
             return postData;
         }
 
+        /// <summary>
+        /// Discord投稿処理
+        /// </summary>
+        /// <param name="sendData"></param>
+        /// <returns></returns>
         public async Task SendDiscordAsync(string sendData)
         {
             var jsonData = new DiscordJson

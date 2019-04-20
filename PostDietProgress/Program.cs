@@ -57,6 +57,7 @@ namespace PostDietProgress
                 }
                 catch
                 {
+                    await discordService.SendDiscordAsync("身体データの取得に失敗しました。トークンの有効期限が切れた可能性があります。");
                     throw;
                 }
 

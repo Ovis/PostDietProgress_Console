@@ -175,7 +175,7 @@ namespace PostDietProgress.Service
         }
 
         /// <summary>
-        /// リクエストトークン再取得処理
+        /// リクエストトークン取得処理
         /// </summary>
         /// <param name="localTime"></param>
         /// <returns></returns>
