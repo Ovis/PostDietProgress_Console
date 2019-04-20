@@ -1,5 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Newtonsoft.Json;
+using System;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -15,13 +15,71 @@ namespace PostDietProgress.Service
         private HttpClientHandler Handler;
         private HttpClient HttpClient;
         private Settings Setting;
+        private DatabaseService DbSvs;
         #endregion
 
-        public HealthPlanetService(HttpClient client, HttpClientHandler handler, Settings setting)
+        public HealthPlanetService(HttpClient client, HttpClientHandler handler,DatabaseService dbSvs, Settings setting)
         {
             HttpClient = client;
             Handler = handler;
             Setting = setting;
+            DbSvs = dbSvs;
+        }
+
+        /// <summary>
+        /// HealthPlanetOAuth処理
+        /// </summary>
+        /// <param name="setting"></param>
+        /// <param name="dbSvs"></param>
+        /// <param name="healthPlanetSvs"></param>
+        /// <param name="retry"></param>
+        /// <returns></returns>
+        public async Task OAuthProcessAsync(bool retry = false)
+        {
+            /* 認証用データをスクレイピング */
+            var doc = new HtmlAgilityPack.HtmlDocument();
+
+            /* エンコードプロバイダーを登録(Shift-JIS用) */
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+            /* 認証処理 */
+            var ret = retry ? null : await DbSvs.GetOAuthToken();
+
+            if (ret == null)
+            {
+                /* ログイン処理 */
+                var htmlData = await LoginProcess();
+
+                doc.LoadHtml(htmlData);
+
+                Setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
+
+                await DbSvs.SetOAuthToken();
+            }
+            else
+            {
+                Setting.TanitaOAuthToken = ret;
+            }
+
+            /*リクエストトークン取得処理 */
+            ret = retry ? null : await DbSvs.GetAccessToken();
+
+            if (ret == null)
+            {
+                /* ログイン処理 */
+                doc.LoadHtml(await GetApprovalCode(Setting.TanitaOAuthToken));
+
+                var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
+
+                /* リクエストトークン処理 */
+                Setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await GetAccessToken(authCode)).access_token;
+                await DbSvs.SetAccessToken();
+            }
+            else
+            {
+                Setting.TanitaAccessToken = ret;
+            }
+
         }
 
         /// <summary>

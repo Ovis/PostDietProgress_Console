@@ -5,7 +5,6 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace PostDietProgress
@@ -20,10 +19,9 @@ namespace PostDietProgress
             var handler = new HttpClientHandler() { UseCookies = true };
             httpClient.DefaultRequestHeaders.Add("Accept-Language", "ja-JP");
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-
-            var healthPlanetSvs = new HealthPlanetService(httpClient, handler, setting);
-
             var dbSvs = new DatabaseService(setting);
+
+            var healthPlanetSvs = new HealthPlanetService(httpClient, handler, dbSvs, setting);
 
             /* テーブル生成 */
             await dbSvs.CreateTable();
@@ -43,7 +41,7 @@ namespace PostDietProgress
             }
 
             //OAuth処理
-            await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs);
+            await healthPlanetSvs.OAuthProcessAsync();
 
             /* 身体データ取得 */
             /* ログイン処理 */
@@ -56,7 +54,7 @@ namespace PostDietProgress
             {
                 try
                 {
-                    await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs, true);
+                    await healthPlanetSvs.OAuthProcessAsync(true);
                     healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
                 }
                 catch
@@ -87,60 +85,6 @@ namespace PostDietProgress
             await dbSvs.SetHealthData(latestDate, health);
         }
 
-        /// <summary>
-        /// HealthPlanetOAuth処理
-        /// </summary>
-        /// <param name="setting"></param>
-        /// <param name="dbSvs"></param>
-        /// <param name="healthPlanetSvs"></param>
-        /// <param name="retry"></param>
-        /// <returns></returns>
-        private static async Task OAuthProcessAsync(Settings setting, DatabaseService dbSvs, HealthPlanetService healthPlanetSvs, bool retry = false)
-        {
-            /* 認証用データをスクレイピング */
-            var doc = new HtmlAgilityPack.HtmlDocument();
 
-            /* エンコードプロバイダーを登録(Shift-JIS用) */
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-
-            /* 認証処理 */
-            var ret = retry ? null : await dbSvs.GetOAuthToken();
-
-            if (ret == null)
-            {
-                /* ログイン処理 */
-                var htmlData = await healthPlanetSvs.LoginProcess();
-
-                doc.LoadHtml(htmlData);
-
-                setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
-
-                await dbSvs.SetOAuthToken();
-            }
-            else
-            {
-                setting.TanitaOAuthToken = ret;
-            }
-
-            /*リクエストトークン取得処理 */
-            ret = retry ? null : await dbSvs.GetAccessToken();
-
-            if (ret == null)
-            {
-                /* ログイン処理 */
-                doc.LoadHtml(await healthPlanetSvs.GetApprovalCode(setting.TanitaOAuthToken));
-
-                var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
-
-                /* リクエストトークン処理 */
-                setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await healthPlanetSvs.GetAccessToken(authCode)).access_token;
-                await dbSvs.SetAccessToken();
-            }
-            else
-            {
-                setting.TanitaAccessToken = ret;
-            }
-
-        }
     }
 }
