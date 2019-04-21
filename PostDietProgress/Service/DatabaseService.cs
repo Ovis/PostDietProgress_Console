@@ -181,8 +181,8 @@ namespace PostDietProgress.Service
                 thisTime = now;
             }
 
-            var searchStartDateHour = thisTime.AddDays(-1).AddHours(-3).ToString("yyyyMMddHHmm");
-            var searchEndDateHour = thisTime.AddDays(-1).AddHours(3).ToString("yyyyMMddHHmm");
+            var searchStartDateHour = thisTime.AddDays(-1).AddHours(-6).ToString("yyyyMMddHHmm");
+            var searchEndDateHour = thisTime.AddDays(-1).AddHours(6).ToString("yyyyMMddHHmm");
 
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
@@ -190,7 +190,20 @@ namespace PostDietProgress.Service
                 try
                 {
                     var dbObj = await dbConn.QueryAsync<HealthData>(sql, new { Start = searchStartDateHour, End = searchEndDateHour });
-                    return dbObj.FirstOrDefault();
+
+                    /* 複数取得できる場合、一番近しいものを取得 */
+                    var tmp = long.MaxValue;
+                    HealthData result = null;
+                    foreach (var item in dbObj)
+                    {
+                       var diff = long.Parse(dateTime) - long.Parse(item.DateTime);
+                        if(tmp > diff)
+                        {
+                            tmp = diff;
+                            result = item;
+                        }
+                    }
+                    return result;
                 }
                 catch
                 {
