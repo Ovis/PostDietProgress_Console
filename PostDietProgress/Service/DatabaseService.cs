@@ -123,13 +123,9 @@ namespace PostDietProgress.Service
                 {
                     try
                     {
-                        var strBuilder = new StringBuilder();
-
-                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = healthData.Weight }, tran);
-
-
+                        await SetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate,latestDate);
+                        await SetSettingDbVal(SettingDbEnum.PreviousWeight, healthData.Weight);
+   
                         var healthDataText = new StringBuilder();
 
                         healthDataText.AppendLine("INSERT INTO HEALTHDATA (");
@@ -182,6 +178,9 @@ namespace PostDietProgress.Service
             var key = "";
             switch (keyType)
             {
+                case SettingDbEnum.PreviousWeight:
+                    key = "PREVIOUSWEIGHT";
+                    break;
                 case SettingDbEnum.PreviousMeasurememtDate:
                     key = "PREVIOUSMEASUREMENTDATE";
                     break;
