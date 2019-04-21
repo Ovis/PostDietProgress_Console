@@ -17,6 +17,10 @@ namespace PostDietProgress.Service
             Setting = setting;
         }
 
+        /// <summary>
+        /// テーブル生成
+        /// </summary>
+        /// <returns></returns>
         public async Task CreateTable()
         {
             /* データ保管用テーブル作成 */
@@ -75,6 +79,11 @@ namespace PostDietProgress.Service
             }
         }
 
+        /// <summary>
+        /// 設定データDB取得
+        /// </summary>
+        /// <param name="keyType"></param>
+        /// <returns></returns>
         public async Task<string> GetSettingDbVal(SettingDbEnum keyType)
         {
             var key = GetDbKey(keyType);
@@ -87,6 +96,12 @@ namespace PostDietProgress.Service
             }
         }
 
+        /// <summary>
+        /// 設定データDB登録
+        /// </summary>
+        /// <param name="keyType"></param>
+        /// <param name="val"></param>
+        /// <returns></returns>
         public async Task SetSettingDbVal(SettingDbEnum keyType, string val)
         {
             var key = GetDbKey(keyType);
@@ -114,6 +129,12 @@ namespace PostDietProgress.Service
             }
         }
 
+        /// <summary>
+        /// 身体データDB登録
+        /// </summary>
+        /// <param name="latestDate"></param>
+        /// <param name="healthData"></param>
+        /// <returns></returns>
         public async Task SetHealthData(string latestDate, HealthData healthData)
         {
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
@@ -147,6 +168,12 @@ namespace PostDietProgress.Service
             }
         }
 
+        /// <summary>
+        /// 計測時間の一日前頃の身体データ取得
+        /// </summary>
+        /// <param name="dateTime"></param>
+        /// <param name="now"></param>
+        /// <returns></returns>
         public async Task<HealthData> GetPreviousDataAsync(string dateTime, DateTime now)
         {
             if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime thisTime))
@@ -173,6 +200,11 @@ namespace PostDietProgress.Service
             }
         }
 
+        /// <summary>
+        /// 設定テーブルカラムキー取得
+        /// </summary>
+        /// <param name="keyType"></param>
+        /// <returns></returns>
         public string GetDbKey(SettingDbEnum keyType)
         {
             var key = "";

@@ -12,6 +12,11 @@ namespace PostDietProgress
 {
     public static class Program
     {
+        /// <summary>
+        /// メイン処理
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
         static async Task Main(string[] args)
         {
             var setting = new Settings();
