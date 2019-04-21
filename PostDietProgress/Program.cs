@@ -29,14 +29,11 @@ namespace PostDietProgress
 
             var healthPlanetSvs = new HealthPlanetService(httpClient, handler, dbSvs, setting);
 
-            /* 現在時刻(日本時間)取得 */
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
-
-            /* テーブル生成 */
-            await dbSvs.CreateTable();
-
             if (args.Length == 0)
             {
+                /* 現在時刻(日本時間)取得 */
+                var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
+
                 var discordService = new DiscordService(setting, httpClient, dbSvs);
 
                 /* エラーフラグ確認 */
@@ -102,6 +99,7 @@ namespace PostDietProgress
                 var userId = args[0];
                 var passwd = args[1];
                 //初期処理
+                await dbSvs.CreateTable();
                 await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
                 await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
                 Console.WriteLine("初期処理が完了しました。");
