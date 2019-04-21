@@ -34,7 +34,7 @@ namespace PostDietProgress
                 /* 現在時刻(日本時間)取得 */
                 var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
 
-                var discordService = new DiscordService(setting, httpClient, dbSvs);
+                var discordService = new DiscordService(setting, httpClient, dbSvs, healthPlanetSvs);
 
                 /* エラーフラグ確認 */
                 var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);

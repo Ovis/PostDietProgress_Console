@@ -2,6 +2,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -19,7 +20,7 @@ namespace PostDietProgress.Service
         private DatabaseService DbSvs;
         #endregion
 
-        public HealthPlanetService(HttpClient client, HttpClientHandler handler,DatabaseService dbSvs, Settings setting)
+        public HealthPlanetService(HttpClient client, HttpClientHandler handler, DatabaseService dbSvs, Settings setting)
         {
             HttpClient = client;
             Handler = handler;
@@ -65,7 +66,7 @@ namespace PostDietProgress.Service
         /// <param name="userId"></param>
         /// <param name="passwd"></param>
         /// <returns></returns>
-        public async Task OAuthProcessAsync(string userId,string passwd)
+        public async Task OAuthProcessAsync(string userId, string passwd)
         {
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
 
@@ -77,7 +78,7 @@ namespace PostDietProgress.Service
 
             /* 認証処理 */
             /* ログイン処理 */
-            var htmlData = await LoginProcess(userId,passwd);
+            var htmlData = await LoginProcess(userId, passwd);
 
             doc.LoadHtml(htmlData);
 
@@ -95,7 +96,7 @@ namespace PostDietProgress.Service
         /// ログイン認証処理
         /// </summary>
         /// <returns></returns>
-        public async Task<string> LoginProcess(string userId,string passwd)
+        public async Task<string> LoginProcess(string userId, string passwd)
         {
             /* ログイン認証先URL */
             var authUrl = new StringBuilder();
@@ -179,7 +180,7 @@ namespace PostDietProgress.Service
         /// </summary>
         /// <param name="localTime"></param>
         /// <returns></returns>
-        public async Task<string> GetTokenAsync(DateTime localTime,string jsonData)
+        public async Task<string> GetTokenAsync(DateTime localTime, string jsonData)
         {
             var tokenData = JsonConvert.DeserializeObject<Token>(jsonData);
 
@@ -218,6 +219,34 @@ namespace PostDietProgress.Service
             {
                 return await reader.ReadToEndAsync();
             }
+        }
+
+        /// <summary>
+        /// 今週の平均体重を取得
+        /// </summary>
+        /// <param name="localTime"></param>
+        /// <returns></returns>
+        public async Task<double> GetWeekAverageWeightAsync(DateTime localTime)
+        {
+            /* 今週の体重を取得 */
+            var thisWeekData = await DbSvs.GetThisWeekHealthData(localTime);
+            var weightSum = 0.0;
+
+            try
+            {
+                foreach (var data in thisWeekData)
+                {
+                    weightSum += double.Parse(data.Weight);
+                }
+                var count = thisWeekData.Select(d => !string.IsNullOrEmpty(d.Weight)).Count();
+                return Math.Round(weightSum / count, 2);
+            }
+            catch (Exception)
+            {
+
+                return 0;
+            }
+
         }
     }
 }

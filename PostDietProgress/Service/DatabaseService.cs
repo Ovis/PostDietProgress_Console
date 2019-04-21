@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using PostDietProgress.Model;
 using System;
+using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
 using System.Linq;
@@ -48,6 +49,7 @@ namespace PostDietProgress.Service
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "REFRESHTOKEN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVWEEKWEIGHT", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ERRORFLAG", Val = "0" }, tran);
 
                             tran.Commit();
@@ -137,6 +139,9 @@ namespace PostDietProgress.Service
         /// <returns></returns>
         public async Task SetHealthData(string latestDate, HealthData healthData)
         {
+            await SetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate, latestDate);
+            await SetSettingDbVal(SettingDbEnum.PreviousWeight, healthData.Weight);
+
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 await dbConn.OpenAsync();
@@ -144,9 +149,6 @@ namespace PostDietProgress.Service
                 {
                     try
                     {
-                        await SetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate,latestDate);
-                        await SetSettingDbVal(SettingDbEnum.PreviousWeight, healthData.Weight);
-   
                         var healthDataText = new StringBuilder();
 
                         healthDataText.AppendLine("INSERT INTO HEALTHDATA (");
@@ -176,7 +178,7 @@ namespace PostDietProgress.Service
         /// <returns></returns>
         public async Task<HealthData> GetPreviousDataAsync(string dateTime, DateTime now)
         {
-            if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime thisTime))
+            if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out DateTime thisTime))
             {
                 thisTime = now;
             }
@@ -209,7 +211,30 @@ namespace PostDietProgress.Service
                 {
                     throw;
                 }
+            }
+        }
 
+        /// <summary>
+        /// 一週間の計測データ取得
+        /// </summary>
+        /// <param name="dateTime"></param>
+        /// <returns></returns>
+        public async Task<List<HealthData>> GetThisWeekHealthData(DateTime thisTime)
+        {
+            var searchStartDateHour = thisTime.AddDays(-7).AddHours(-6).ToString("yyyyMMddHHmm");
+            var searchEndDateHour = thisTime.ToString("yyyyMMddHHmm");
+
+            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            {
+                var sql = "SELECT * FROM HEALTHDATA WHERE DATETIME BETWEEN @START AND @END";
+                try
+                {
+                    return (await dbConn.QueryAsync<HealthData>(sql, new { Start = searchStartDateHour, End = searchEndDateHour })).ToList();
+                }
+                catch
+                {
+                    throw;
+                }
             }
         }
 
@@ -225,6 +250,9 @@ namespace PostDietProgress.Service
             {
                 case SettingDbEnum.PreviousWeight:
                     key = "PREVIOUSWEIGHT";
+                    break;
+                case SettingDbEnum.PrevWeekWeight:
+                    key = "PREVWEEKWEIGHT";
                     break;
                 case SettingDbEnum.PreviousMeasurememtDate:
                     key = "PREVIOUSMEASUREMENTDATE";

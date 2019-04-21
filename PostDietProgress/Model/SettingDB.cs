@@ -13,6 +13,7 @@ namespace PostDietProgress
     public enum SettingDbEnum
     {
         PreviousWeight,
+        PrevWeekWeight,
         PreviousMeasurememtDate,
         RequestToken,
         ExpiresIn,
