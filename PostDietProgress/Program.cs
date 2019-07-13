@@ -39,7 +39,7 @@ namespace PostDietProgress
                 /* エラーフラグ確認 */
                 var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);
 
-                if(errorFlag == "1")
+                if (errorFlag == "1")
                 {
                     await healthPlanetSvs.GetRefreshToken();
                     try
@@ -53,7 +53,8 @@ namespace PostDietProgress
                         throw;
                     }
                     return;
-                }else if (errorFlag == "2")
+                }
+                else if (errorFlag == "2")
                 {
                     return;
                 }
@@ -104,6 +105,12 @@ namespace PostDietProgress
                 /* Discordに送信 */
                 var sendData = await discordService.CreateSendDataAsync(health, healthData.height, latestDate);
                 await discordService.SendDiscordAsync(sendData);
+
+                if (setting.PostGoogleFit)
+                {
+                    var googleFitService = new GoogleFitService(setting);
+                    await googleFitService.PostGoogleFit(health);
+                }
 
                 /* 前回情報をDBに登録 */
                 await dbSvs.SetHealthData(latestDate, health);

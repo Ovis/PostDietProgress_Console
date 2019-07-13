@@ -24,7 +24,11 @@ namespace PostDietProgress
 
         public Double GoalWeight => Double.Parse(configuration["Setting:GoalWeight"]);
 
-        public bool PostGoogleFit => bool.Parse(configuration["Setting:PostGoogleFit"]);
+        public bool PostGoogleFit => bool.Parse(configuration["Setting:GoogleFitSettings:Enabled"]);
+
+        public String GoogleFitClientId => configuration["Setting:GoogleFitSettings:ClientId"];
+
+        public String GoogleFitClientSecret => configuration["Setting:GoogleFitSettings:ClientSecret"];
 
         public SQLiteConnectionStringBuilder SqlConnectionSb => new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
 

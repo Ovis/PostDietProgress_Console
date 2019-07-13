@@ -4,6 +4,11 @@
     "TanitaClientSecretToken": "",
     "DiscordWebhookUrl": "https://discordapp.com/api/webhooks/????????",
     "OriginalWeight": 80,
-    "GoalWeight": 70
+    "GoalWeight": 70,
+    "GoogleFitSettings": {
+      "Enabled": false,
+      "ClientId": "",
+      "ClientSecret": ""
+    }
   }
 }
