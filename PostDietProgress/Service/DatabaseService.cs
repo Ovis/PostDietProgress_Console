@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using PostDietProgress.Model;
 using System;
+using System.Collections.Generic;
 using System.Data.SQLite;
 using System.Globalization;
 using System.Linq;
@@ -17,6 +18,10 @@ namespace PostDietProgress.Service
             Setting = setting;
         }
 
+        /// <summary>
+        /// テーブル生成
+        /// </summary>
+        /// <returns></returns>
         public async Task CreateTable()
         {
             /* データ保管用テーブル作成 */
@@ -39,10 +44,13 @@ namespace PostDietProgress.Service
                             var strBuilder = new StringBuilder();
 
                             strBuilder.AppendLine("INSERT INTO SETTING (KEY,VALUE) SELECT @Key, @Val WHERE NOT EXISTS(SELECT 1 FROM SETTING WHERE KEY = @Key)");
-                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = "" }, tran);
-                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "REQUESTTOKEN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "EXPIRESIN", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "REFRESHTOKEN", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = "" }, tran);
                             await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVWEEKWEIGHT", Val = "" }, tran);
+                            await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ERRORFLAG", Val = "0" }, tran);
 
                             tran.Commit();
                         }
@@ -73,39 +81,33 @@ namespace PostDietProgress.Service
             }
         }
 
-        public async Task<string> GetPreviousDate()
+        /// <summary>
+        /// 設定データDB取得
+        /// </summary>
+        /// <param name="keyType"></param>
+        /// <returns></returns>
+        public async Task<string> GetSettingDbVal(SettingDbEnum keyType)
         {
+            var key = GetDbKey(keyType);
+
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
-                try
-                {
-                    using (var cmd = dbConn.CreateCommand())
-                    {
-                        var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'PREVIOUSMEASUREMENTDATE'")).FirstOrDefault();
-
-                        return dbObj?.Value;
-                    }
-                }
-                catch (Exception)
-                {
-
-                    throw;
-                }
-            }
-        }
-
-        public async Task<string> GetOAuthToken()
-        {
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
-            {
-                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'OAUTHTOKEN'")).FirstOrDefault();
+                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = '" + key + "'")).FirstOrDefault();
 
                 return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
             }
         }
 
-        public async Task SetOAuthToken()
+        /// <summary>
+        /// 設定データDB登録
+        /// </summary>
+        /// <param name="keyType"></param>
+        /// <param name="val"></param>
+        /// <returns></returns>
+        public async Task SetSettingDbVal(SettingDbEnum keyType, string val)
         {
+            var key = GetDbKey(keyType);
+
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 await dbConn.OpenAsync();
@@ -116,7 +118,7 @@ namespace PostDietProgress.Service
                         var strBuilder = new StringBuilder();
 
                         strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "OAUTHTOKEN", Val = Setting.TanitaOAuthToken }, tran);
+                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = key, Val = val }, tran);
 
                         tran.Commit();
                     }
@@ -129,43 +131,17 @@ namespace PostDietProgress.Service
             }
         }
 
-        public async Task<string> GetAccessToken()
-        {
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
-            {
-                var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = 'ACCESSTOKEN'")).FirstOrDefault();
-
-                return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
-            }
-        }
-
-        public async Task SetAccessToken()
-        {
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
-            {
-                await dbConn.OpenAsync();
-                using (var tran = dbConn.BeginTransaction())
-                {
-                    try
-                    {
-                        var strBuilder = new StringBuilder();
-
-                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ACCESSTOKEN", Val = Setting.TanitaAccessToken }, tran);
-
-                        tran.Commit();
-                    }
-                    catch
-                    {
-                        tran.Rollback();
-                        throw;
-                    }
-                }
-            }
-        }
-
+        /// <summary>
+        /// 身体データDB登録
+        /// </summary>
+        /// <param name="latestDate"></param>
+        /// <param name="healthData"></param>
+        /// <returns></returns>
         public async Task SetHealthData(string latestDate, HealthData healthData)
         {
+            await SetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate, latestDate);
+            await SetSettingDbVal(SettingDbEnum.PreviousWeight, healthData.Weight);
+
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 await dbConn.OpenAsync();
@@ -173,13 +149,6 @@ namespace PostDietProgress.Service
                 {
                     try
                     {
-                        var strBuilder = new StringBuilder();
-
-                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSMEASUREMENTDATE", Val = latestDate }, tran);
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = healthData.Weight }, tran);
-
-
                         var healthDataText = new StringBuilder();
 
                         healthDataText.AppendLine("INSERT INTO HEALTHDATA (");
@@ -201,15 +170,21 @@ namespace PostDietProgress.Service
             }
         }
 
-        public async Task<HealthData> GetPreviousData(string dateTime, DateTime now)
+        /// <summary>
+        /// 計測時間の一日前頃の身体データ取得
+        /// </summary>
+        /// <param name="dateTime"></param>
+        /// <param name="now"></param>
+        /// <returns></returns>
+        public async Task<HealthData> GetPreviousDataAsync(string dateTime)
         {
-            if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime thisTime))
+            if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out DateTime thisTime))
             {
-                thisTime = now;
+                thisTime = Setting.LocalTime;
             }
 
-            var searchStartDateHour = thisTime.AddDays(-1).AddHours(-3).ToString("yyyyMMddHHmm");
-            var searchEndDateHour = thisTime.AddDays(-1).AddHours(3).ToString("yyyyMMddHHmm");
+            var searchStartDateHour = thisTime.AddDays(-1).AddHours(-6).ToString("yyyyMMddHHmm");
+            var searchEndDateHour = thisTime.AddDays(-1).AddHours(6).ToString("yyyyMMddHHmm");
 
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {
@@ -217,14 +192,88 @@ namespace PostDietProgress.Service
                 try
                 {
                     var dbObj = await dbConn.QueryAsync<HealthData>(sql, new { Start = searchStartDateHour, End = searchEndDateHour });
-                    return dbObj.FirstOrDefault();
+
+                    /* 複数取得できる場合、一番近しいものを取得 */
+                    var tmp = long.MaxValue;
+                    HealthData result = null;
+                    foreach (var item in dbObj)
+                    {
+                       var diff = long.Parse(dateTime) - long.Parse(item.DateTime);
+                        if(tmp > diff)
+                        {
+                            tmp = diff;
+                            result = item;
+                        }
+                    }
+                    return result;
                 }
                 catch
                 {
                     throw;
                 }
-
             }
+        }
+
+        /// <summary>
+        /// 一週間の計測データ取得
+        /// </summary>
+        /// <param name="dateTime"></param>
+        /// <returns></returns>
+        public async Task<List<HealthData>> GetThisWeekHealthData()
+        {
+            var searchStartDateHour = Setting.LocalTime.AddDays(-7).AddHours(-6).ToString("yyyyMMddHHmm");
+            var searchEndDateHour = Setting.LocalTime.ToString("yyyyMMddHHmm");
+
+            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            {
+                var sql = "SELECT * FROM HEALTHDATA WHERE DATETIME BETWEEN @START AND @END";
+                try
+                {
+                    return (await dbConn.QueryAsync<HealthData>(sql, new { Start = searchStartDateHour, End = searchEndDateHour })).ToList();
+                }
+                catch
+                {
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 設定テーブルカラムキー取得
+        /// </summary>
+        /// <param name="keyType"></param>
+        /// <returns></returns>
+        public string GetDbKey(SettingDbEnum keyType)
+        {
+            var key = "";
+            switch (keyType)
+            {
+                case SettingDbEnum.PreviousWeight:
+                    key = "PREVIOUSWEIGHT";
+                    break;
+                case SettingDbEnum.PrevWeekWeight:
+                    key = "PREVWEEKWEIGHT";
+                    break;
+                case SettingDbEnum.PreviousMeasurememtDate:
+                    key = "PREVIOUSMEASUREMENTDATE";
+                    break;
+                case SettingDbEnum.RequestToken:
+                    key = "REQUESTTOKEN";
+                    break;
+                case SettingDbEnum.ExpiresIn:
+                    key = "EXPIRESIN";
+                    break;
+                case SettingDbEnum.RefreshToken:
+                    key = "REFRESHTOKEN";
+                    break;
+                case SettingDbEnum.ErrorFlag:
+                    key = "ERRORFLAG";
+                    break;
+                default:
+                    break;
+            }
+
+            return key;
         }
     }
 }

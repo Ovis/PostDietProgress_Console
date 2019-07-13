@@ -6,7 +6,6 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using TimeZoneConverter;
 
 namespace PostDietProgress.Service
 {
@@ -15,30 +14,32 @@ namespace PostDietProgress.Service
         Settings Setting;
         HttpClient HttpClient;
         DatabaseService DBSvs;
+        HealthPlanetService HealthPlanetSvs;
 
-        public DiscordService(Settings setting, HttpClient httpClient, DatabaseService dbSvs)
+        public DiscordService(Settings setting, HttpClient httpClient, DatabaseService dbSvs, HealthPlanetService healthPlanetSvs)
         {
             Setting = setting;
             HttpClient = httpClient;
             DBSvs = dbSvs;
+            HealthPlanetSvs = healthPlanetSvs;
         }
 
         /// <summary>
-        /// Discord投稿処理
+        /// Discord投稿データ作成処理
         /// </summary>
         /// <param name="healthData">身体情報</param>
         /// <param name="height">身長</param>
         /// <param name="date">日付</param>
         /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
-        public async Task<string> SendDiscord(HealthData healthData, string height, string date)
+        public async Task<string> CreateSendDataAsync(HealthData healthData, string height, string date)
         {
-            var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
+            var jst = new CultureInfo("ja-JP");
+            var utc = new CultureInfo("en-US");
 
             if (!DateTime.TryParseExact(date, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var dt))
             {
-                dt = localTime;
+                dt = Setting.LocalTime;
             }
 
             /* BMI */
@@ -56,7 +57,7 @@ namespace PostDietProgress.Service
                           + "目標達成率:" + goal + "%" + Environment.NewLine;
 
             /* 前回測定データがあるならそれも投稿 */
-            var previousHealthData = await DBSvs.GetPreviousData(healthData.DateTime, localTime);
+            var previousHealthData = await DBSvs.GetPreviousDataAsync(healthData.DateTime);
 
             if (previousHealthData != null)
             {
@@ -64,16 +65,51 @@ namespace PostDietProgress.Service
 
                 var diffWeight = Math.Round((weight - previousWeight), 2);
 
-                DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out DateTime prevDate);
+                DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", jst, DateTimeStyles.AssumeLocal, out DateTime prevDate);
 
                 postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
 
                 postData += diffWeight >= 0 ? (diffWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
             }
 
+            /* 日曜日なら移動平均計算 */
+            var tmpHM = new TimeSpan(dt.Ticks);
+            var nightStart = new TimeSpan(18, 00, 00);
+            var nightEnd = new TimeSpan(05, 00, 00);
+            if (dt.ToString("ddd", utc) == "Sun" && (tmpHM > nightStart || tmpHM < nightEnd))
+            {
+                /* 前週の体重平均値を取得 */
+                var prevWeekWeight = await DBSvs.GetSettingDbVal(SettingDbEnum.PrevWeekWeight);
+                if (!string.IsNullOrEmpty(prevWeekWeight))
+                {
+                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync();
+
+                    var averageWeight = Math.Round((thisWeekWeightAverage - double.Parse(prevWeekWeight)), 2);
+
+                    postData += "前週の平均体重:" + prevWeekWeight + "kg   今週の平均体重:" + thisWeekWeightAverage + "kg" + Environment.NewLine;
+                    postData += "移動平均値: " + averageWeight + "kg" + Environment.NewLine;
+                    postData += averageWeight >= 0 ? (averageWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
+                }
+                else
+                {
+                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync();
+                    await DBSvs.SetSettingDbVal(SettingDbEnum.PrevWeekWeight, thisWeekWeightAverage.ToString());
+                }
+            }
+
+            return postData;
+        }
+
+        /// <summary>
+        /// Discord投稿処理
+        /// </summary>
+        /// <param name="sendData"></param>
+        /// <returns></returns>
+        public async Task SendDiscordAsync(string sendData)
+        {
             var jsonData = new DiscordJson
             {
-                content = postData
+                content = sendData
             };
 
             var json = JsonConvert.SerializeObject(jsonData);
@@ -85,7 +121,7 @@ namespace PostDietProgress.Service
             using (var stream = (await response.Content.ReadAsStreamAsync()))
             using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
             {
-                return await reader.ReadToEndAsync();
+                await reader.ReadToEndAsync();
             }
         }
     }

@@ -2,7 +2,7 @@
 
 namespace PostDietProgress
 {
-    class Token
+    public class Token
     {
         public String access_token { get; set; }
 

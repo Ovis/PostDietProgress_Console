@@ -9,4 +9,15 @@ namespace PostDietProgress
         public string Key { get; set; }
         public string Value { get; set; }
     }
+
+    public enum SettingDbEnum
+    {
+        PreviousWeight,
+        PrevWeekWeight,
+        PreviousMeasurememtDate,
+        RequestToken,
+        ExpiresIn,
+        RefreshToken,
+        ErrorFlag
+    }
 }

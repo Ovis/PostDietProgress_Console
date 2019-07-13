@@ -12,6 +12,11 @@ namespace PostDietProgress
 {
     public static class Program
     {
+        /// <summary>
+        /// メイン処理
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
         static async Task Main(string[] args)
         {
             var setting = new Settings();
@@ -20,127 +25,104 @@ namespace PostDietProgress
             var handler = new HttpClientHandler() { UseCookies = true };
             httpClient.DefaultRequestHeaders.Add("Accept-Language", "ja-JP");
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-
-            var healthPlanetSvs = new HealthPlanetService(httpClient, handler, setting);
-
             var dbSvs = new DatabaseService(setting);
-
-            /* テーブル生成 */
-            await dbSvs.CreateTable();
-
-            /* 前回測定日時 */
-            var previousDate = await dbSvs.GetPreviousDate();
-
-            if (previousDate != "")
-            {
-                if (!DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var prevDate))
-                {
-                }
-                if (prevDate > DateTime.Now.AddHours(-6))
-                {
-                    return;
-                }
-            }
-
-            //OAuth処理
-            await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs);
-
-            /* 身体データ取得 */
-            /* ログイン処理 */
-            InnerScan healthData = null;
-            try
-            {
-                healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
-            }
-            catch
-            {
-                try
-                {
-                    await OAuthProcessAsync(setting, dbSvs, healthPlanetSvs, true);
-                    healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthData());
-                }
-                catch
-                {
-                    throw;
-                }
-            }
-            var healthList = healthData.data;
-
-            /* 最新の日付のデータを取得 */
-            healthList.Sort((a, b) => string.Compare(b.date, a.date));
-            var latestDate = healthList.First().date.ToString();
-
-            if (latestDate.Equals(previousDate))
-            {
-                //前回から計測日が変わっていない(=計測してない)ので処理を終了
-                return;
-            }
-
-            /* Discordに送るためのデータをDictionary化 */
-            var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
-
-            /* Discordに送信 */
-            var discordService = new DiscordService(setting, httpClient, dbSvs);
-            await discordService.SendDiscord(health, healthData.height, latestDate);
-
-            /* 前回情報をDBに登録 */
-            await dbSvs.SetHealthData(latestDate, health);
-        }
-
-        /// <summary>
-        /// HealthPlanetOAuth処理
-        /// </summary>
-        /// <param name="setting"></param>
-        /// <param name="dbSvs"></param>
-        /// <param name="healthPlanetSvs"></param>
-        /// <param name="retry"></param>
-        /// <returns></returns>
-        private static async Task OAuthProcessAsync(Settings setting, DatabaseService dbSvs, HealthPlanetService healthPlanetSvs, bool retry = false)
-        {
-            /* 認証用データをスクレイピング */
-            var doc = new HtmlAgilityPack.HtmlDocument();
 
             /* エンコードプロバイダーを登録(Shift-JIS用) */
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-            /* 認証処理 */
-            var ret = retry ? null : await dbSvs.GetOAuthToken();
+            var healthPlanetSvs = new HealthPlanetService(httpClient, handler, dbSvs, setting);
 
-            if (ret == null)
+            if (args.Length == 0)
             {
-                /* ログイン処理 */
-                var htmlData = await healthPlanetSvs.LoginProcess();
+                var discordService = new DiscordService(setting, httpClient, dbSvs, healthPlanetSvs);
 
-                doc.LoadHtml(htmlData);
+                /* エラーフラグ確認 */
+                var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);
 
-                setting.TanitaOAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
+                if(errorFlag == "1")
+                {
+                    await healthPlanetSvs.GetRefreshToken();
+                    try
+                    {
+                        JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
+                    }
+                    catch
+                    {
+                        await discordService.SendDiscordAsync("トークンを更新しましたが、データの取得に失敗しました。");
+                        await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "2");
+                        throw;
+                    }
+                    return;
+                }else if (errorFlag == "2")
+                {
+                    return;
+                }
 
-                await dbSvs.SetOAuthToken();
+                /* 前回測定日時 */
+                var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
+
+                if (!string.IsNullOrEmpty(previousDate))
+                {
+                    DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var prevDate);
+                    if (prevDate > setting.LocalTime.AddHours(-6))
+                    {
+                        return;
+                    }
+                }
+
+                //リクエストトークン取得
+                await healthPlanetSvs.GetHealthPlanetToken();
+
+                /* 身体データ取得 */
+                InnerScan healthData = null;
+                try
+                {
+                    healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
+                }
+                catch
+                {
+                    await discordService.SendDiscordAsync("身体データの取得に失敗しました。");
+                    await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "1");
+                    throw;
+                }
+
+                var healthList = healthData.data;
+
+                /* 最新の日付のデータを取得 */
+                healthList.Sort((a, b) => string.Compare(b.date, a.date));
+                var latestDate = healthList.First().date.ToString();
+
+                if (latestDate.Equals(previousDate))
+                {
+                    //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                    return;
+                }
+
+                /* Discordに送るためのデータをDictionary化 */
+                var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
+
+                /* Discordに送信 */
+                var sendData = await discordService.CreateSendDataAsync(health, healthData.height, latestDate);
+                await discordService.SendDiscordAsync(sendData);
+
+                /* 前回情報をDBに登録 */
+                await dbSvs.SetHealthData(latestDate, health);
+            }
+            else if (args.Length == 2)
+            {
+                var userId = args[0];
+                var passwd = args[1];
+                //初期処理
+                await dbSvs.CreateTable();
+                await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
+                await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
+                Console.WriteLine("初期処理が完了しました。");
+                return;
             }
             else
             {
-                setting.TanitaOAuthToken = ret;
+                Console.WriteLine("引数の個数が誤っています。");
             }
-
-            /*リクエストトークン取得処理 */
-            ret = retry ? null : await dbSvs.GetAccessToken();
-
-            if (ret == null)
-            {
-                /* ログイン処理 */
-                doc.LoadHtml(await healthPlanetSvs.GetApprovalCode(setting.TanitaOAuthToken));
-
-                var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
-
-                /* リクエストトークン処理 */
-                setting.TanitaAccessToken = JsonConvert.DeserializeObject<Token>(await healthPlanetSvs.GetAccessToken(authCode)).access_token;
-                await dbSvs.SetAccessToken();
-            }
-            else
-            {
-                setting.TanitaAccessToken = ret;
-            }
-
         }
     }
 }

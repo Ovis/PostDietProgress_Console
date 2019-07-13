@@ -1,6 +1,7 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Data.SQLite;
+using TimeZoneConverter;
 
 namespace PostDietProgress
 {
@@ -11,18 +12,12 @@ namespace PostDietProgress
             .AddJsonFile("App.config.json", optional: true)
             .Build();
 
-        public String TanitaUserID => configuration["Setting:TanitaUserID"];
-
-        public String TanitaUserPass => configuration["Setting:TanitaUserPass"];
-
         public String TanitaClientID => configuration["Setting:TanitaClientID"];
 
         public String TanitaClientSecretToken => configuration["Setting:TanitaClientSecretToken"];
 
-        public String TanitaOAuthToken { get; set; }
+        public String TanitaRequestToken { get; set; }
 
-        public String TanitaAccessToken { get; set; }
-        
         public String DiscordWebhookUrl => configuration["Setting:DiscordWebhookUrl"];
 
         public Double OriginalWeight => Double.Parse(configuration["Setting:OriginalWeight"]);
@@ -30,5 +25,12 @@ namespace PostDietProgress
         public Double GoalWeight => Double.Parse(configuration["Setting:GoalWeight"]);
 
         public SQLiteConnectionStringBuilder SqlConnectionSb => new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
+
+        public DateTime LocalTime { get; set; }
+
+        public Settings()
+        {
+            LocalTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
+        }
     }
 }

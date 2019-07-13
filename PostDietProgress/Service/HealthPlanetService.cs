@@ -1,6 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Newtonsoft.Json;
+using System;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -15,20 +17,78 @@ namespace PostDietProgress.Service
         private HttpClientHandler Handler;
         private HttpClient HttpClient;
         private Settings Setting;
+        private DatabaseService DbSvs;
         #endregion
 
-        public HealthPlanetService(HttpClient client, HttpClientHandler handler, Settings setting)
+        public HealthPlanetService(HttpClient client, HttpClientHandler handler, DatabaseService dbSvs, Settings setting)
         {
             HttpClient = client;
             Handler = handler;
             Setting = setting;
+            DbSvs = dbSvs;
+        }
+
+        /// <summary>
+        /// リクエストトークン取得処理(DBから取得)
+        /// </summary>
+        /// <returns></returns>
+        public async Task GetHealthPlanetToken()
+        {
+            DateTime.TryParseExact(await DbSvs.GetSettingDbVal(SettingDbEnum.ExpiresIn), "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var expireDate);
+
+            try
+            {
+                if (expireDate < Setting.LocalTime)
+                {
+                    /* 有効期限が切れている場合はリフレッシュトークンで改めて取得 */
+                    await GetRefreshToken();
+                }
+                else
+                {
+                    Setting.TanitaRequestToken = await DbSvs.GetSettingDbVal(SettingDbEnum.RequestToken);
+                }
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// HealthPlanetOAuth処理
+        /// </summary>
+        /// <param name="userId"></param>
+        /// <param name="passwd"></param>
+        /// <returns></returns>
+        public async Task OAuthProcessAsync(string userId, string passwd)
+        {
+            /* 認証用データをスクレイピング */
+            var doc = new HtmlAgilityPack.HtmlDocument();
+
+            /* エンコードプロバイダーを登録(Shift-JIS用) */
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+            /* 認証処理 */
+            /* ログイン処理 */
+            var htmlData = await LoginProcess(userId, passwd);
+
+            doc.LoadHtml(htmlData);
+
+            var oAuthToken = doc.DocumentNode.SelectSingleNode("//input[@type='hidden' and @name='oauth_token']").Attributes["value"].Value;
+
+            doc.LoadHtml(await GetApprovalCode(oAuthToken));
+
+            var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
+
+            /* リクエストトークン取得処理 */
+            await GetTokenAsync(await RequestTokenAsync(authCode));
         }
 
         /// <summary>
         /// ログイン認証処理
         /// </summary>
         /// <returns></returns>
-        public async Task<string> LoginProcess()
+        public async Task<string> LoginProcess(string userId, string passwd)
         {
             /* ログイン認証先URL */
             var authUrl = new StringBuilder();
@@ -39,8 +99,8 @@ namespace PostDietProgress.Service
             authUrl.Append("&response_type=code");
 
             var postString = new StringBuilder();
-            postString.Append("loginId=" + Setting.TanitaUserID + "&");
-            postString.Append("passwd=" + Setting.TanitaUserPass + "&");
+            postString.Append("loginId=" + userId + "&");
+            postString.Append("passwd=" + passwd + "&");
             postString.Append("send=1&");
             postString.Append("url=" + HttpUtility.UrlEncode(authUrl.ToString(), Encoding.GetEncoding("shift_jis")));
 
@@ -80,18 +140,21 @@ namespace PostDietProgress.Service
         }
 
         /// <summary>
-        /// アクセストークン取得
+        /// トークン情報取得
         /// </summary>
-        /// <param name="oAuthToken"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public async Task<string> GetAccessToken(string oAuthToken)
+        public async Task<string> RequestTokenAsync(string token, bool reFlg = false)
         {
+            var grantType = reFlg ? "refresh_token" : "authorization_code";
+            var code = reFlg ? "refresh_token" : "code";
+
             var postString = new StringBuilder();
             postString.Append("client_id=" + Setting.TanitaClientID + "&");
             postString.Append("client_secret=" + Setting.TanitaClientSecretToken + "&");
             postString.Append("redirect_uri=" + HttpUtility.UrlEncode("http://localhost/", Encoding.GetEncoding("shift_jis")) + "&");
-            postString.Append("code=" + oAuthToken + "&");
-            postString.Append("grant_type=authorization_code");
+            postString.Append(code + "=" + token + "&");
+            postString.Append("grant_type=" + grantType);
 
             var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
 
@@ -105,14 +168,36 @@ namespace PostDietProgress.Service
         }
 
         /// <summary>
+        /// リクエストトークン取得処理
+        /// </summary>
+        /// <param name="localTime"></param>
+        /// <returns></returns>
+        public async Task<string> GetTokenAsync(string jsonData)
+        {
+            var tokenData = JsonConvert.DeserializeObject<Token>(jsonData);
+
+            await DbSvs.SetSettingDbVal(SettingDbEnum.RequestToken, tokenData.access_token);
+            await DbSvs.SetSettingDbVal(SettingDbEnum.ExpiresIn, Setting.LocalTime.AddDays(30).ToString("yyyyMMddHHmm"));
+            await DbSvs.SetSettingDbVal(SettingDbEnum.RefreshToken, tokenData.refresh_token);
+
+            return tokenData.access_token;
+        }
+
+        public async Task GetRefreshToken()
+        {
+            var refreshToken = await DbSvs.GetSettingDbVal(SettingDbEnum.RefreshToken);
+            Setting.TanitaRequestToken = await GetTokenAsync(await RequestTokenAsync(refreshToken, true));
+        }
+
+        /// <summary>
         /// 身体データ取得
         /// </summary>
         /// <returns></returns>
-        public async Task<string> GetHealthData()
+        public async Task<string> GetHealthDataAsync()
         {
             var postString = new StringBuilder();
             /* アクセストークン */
-            postString.Append("access_token=" + Setting.TanitaAccessToken + "&");
+            postString.Append("access_token=" + Setting.TanitaRequestToken + "&");
             /* 測定日付で取得 */
             postString.Append("date=1&");
             /* 取得期間From,To */
@@ -132,6 +217,34 @@ namespace PostDietProgress.Service
             {
                 return await reader.ReadToEndAsync();
             }
+        }
+
+        /// <summary>
+        /// 今週の平均体重を取得
+        /// </summary>
+        /// <param name="localTime"></param>
+        /// <returns></returns>
+        public async Task<double> GetWeekAverageWeightAsync()
+        {
+            /* 今週の体重を取得 */
+            var thisWeekData = await DbSvs.GetThisWeekHealthData();
+            var weightSum = 0.0;
+
+            try
+            {
+                foreach (var data in thisWeekData)
+                {
+                    weightSum += double.Parse(data.Weight);
+                }
+                var count = thisWeekData.Select(d => !string.IsNullOrEmpty(d.Weight)).Count();
+                return Math.Round(weightSum / count, 2);
+            }
+            catch (Exception)
+            {
+
+                return 0;
+            }
+
         }
     }
 }
