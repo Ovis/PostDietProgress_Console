@@ -176,11 +176,11 @@ namespace PostDietProgress.Service
         /// <param name="dateTime"></param>
         /// <param name="now"></param>
         /// <returns></returns>
-        public async Task<HealthData> GetPreviousDataAsync(string dateTime, DateTime now)
+        public async Task<HealthData> GetPreviousDataAsync(string dateTime)
         {
             if (!DateTime.TryParseExact(dateTime, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out DateTime thisTime))
             {
-                thisTime = now;
+                thisTime = Setting.LocalTime;
             }
 
             var searchStartDateHour = thisTime.AddDays(-1).AddHours(-6).ToString("yyyyMMddHHmm");
@@ -219,10 +219,10 @@ namespace PostDietProgress.Service
         /// </summary>
         /// <param name="dateTime"></param>
         /// <returns></returns>
-        public async Task<List<HealthData>> GetThisWeekHealthData(DateTime thisTime)
+        public async Task<List<HealthData>> GetThisWeekHealthData()
         {
-            var searchStartDateHour = thisTime.AddDays(-7).AddHours(-6).ToString("yyyyMMddHHmm");
-            var searchEndDateHour = thisTime.ToString("yyyyMMddHHmm");
+            var searchStartDateHour = Setting.LocalTime.AddDays(-7).AddHours(-6).ToString("yyyyMMddHHmm");
+            var searchEndDateHour = Setting.LocalTime.ToString("yyyyMMddHHmm");
 
             using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
             {

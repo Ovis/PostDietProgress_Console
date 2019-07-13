@@ -6,7 +6,6 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using TimeZoneConverter;
 
 namespace PostDietProgress.Service
 {
@@ -37,11 +36,10 @@ namespace PostDietProgress.Service
         {
             var jst = new CultureInfo("ja-JP");
             var utc = new CultureInfo("en-US");
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
 
             if (!DateTime.TryParseExact(date, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var dt))
             {
-                dt = localTime;
+                dt = Setting.LocalTime;
             }
 
             /* BMI */
@@ -59,7 +57,7 @@ namespace PostDietProgress.Service
                           + "目標達成率:" + goal + "%" + Environment.NewLine;
 
             /* 前回測定データがあるならそれも投稿 */
-            var previousHealthData = await DBSvs.GetPreviousDataAsync(healthData.DateTime, localTime);
+            var previousHealthData = await DBSvs.GetPreviousDataAsync(healthData.DateTime);
 
             if (previousHealthData != null)
             {
@@ -84,7 +82,7 @@ namespace PostDietProgress.Service
                 var prevWeekWeight = await DBSvs.GetSettingDbVal(SettingDbEnum.PrevWeekWeight);
                 if (!string.IsNullOrEmpty(prevWeekWeight))
                 {
-                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync(localTime);
+                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync();
 
                     var averageWeight = Math.Round((thisWeekWeightAverage - double.Parse(prevWeekWeight)), 2);
 
@@ -94,7 +92,7 @@ namespace PostDietProgress.Service
                 }
                 else
                 {
-                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync(localTime);
+                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync();
                     await DBSvs.SetSettingDbVal(SettingDbEnum.PrevWeekWeight, thisWeekWeightAverage.ToString());
                 }
             }

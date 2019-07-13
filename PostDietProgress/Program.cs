@@ -5,8 +5,8 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
-using TimeZoneConverter;
 
 namespace PostDietProgress
 {
@@ -27,19 +27,33 @@ namespace PostDietProgress
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
             var dbSvs = new DatabaseService(setting);
 
+            /* エンコードプロバイダーを登録(Shift-JIS用) */
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
             var healthPlanetSvs = new HealthPlanetService(httpClient, handler, dbSvs, setting);
 
             if (args.Length == 0)
             {
-                /* 現在時刻(日本時間)取得 */
-                var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
-
                 var discordService = new DiscordService(setting, httpClient, dbSvs, healthPlanetSvs);
 
                 /* エラーフラグ確認 */
                 var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);
 
                 if(errorFlag == "1")
+                {
+                    await healthPlanetSvs.GetRefreshToken();
+                    try
+                    {
+                        JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
+                    }
+                    catch
+                    {
+                        await discordService.SendDiscordAsync("トークンを更新しましたが、データの取得に失敗しました。");
+                        await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "2");
+                        throw;
+                    }
+                    return;
+                }else if (errorFlag == "2")
                 {
                     return;
                 }
@@ -50,7 +64,7 @@ namespace PostDietProgress
                 if (!string.IsNullOrEmpty(previousDate))
                 {
                     DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var prevDate);
-                    if (prevDate > localTime.AddHours(-6))
+                    if (prevDate > setting.LocalTime.AddHours(-6))
                     {
                         return;
                     }
@@ -67,7 +81,7 @@ namespace PostDietProgress
                 }
                 catch
                 {
-                    await discordService.SendDiscordAsync("身体データの取得に失敗しました。トークンの有効期限が切れた可能性があります。");
+                    await discordService.SendDiscordAsync("身体データの取得に失敗しました。");
                     await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "1");
                     throw;
                 }

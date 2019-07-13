@@ -34,20 +34,14 @@ namespace PostDietProgress.Service
         /// <returns></returns>
         public async Task GetHealthPlanetToken()
         {
-            /* エンコードプロバイダーを登録(Shift-JIS用) */
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
-
             DateTime.TryParseExact(await DbSvs.GetSettingDbVal(SettingDbEnum.ExpiresIn), "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var expireDate);
 
             try
             {
-                if (expireDate < localTime)
+                if (expireDate < Setting.LocalTime)
                 {
                     /* 有効期限が切れている場合はリフレッシュトークンで改めて取得 */
-                    var refreshToken = await DbSvs.GetSettingDbVal(SettingDbEnum.RefreshToken);
-                    Setting.TanitaRequestToken = await GetTokenAsync(localTime, await RequestTokenAsync(refreshToken, true));
+                    await GetRefreshToken();
                 }
                 else
                 {
@@ -68,8 +62,6 @@ namespace PostDietProgress.Service
         /// <returns></returns>
         public async Task OAuthProcessAsync(string userId, string passwd)
         {
-            var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TZConvert.GetTimeZoneInfo("Tokyo Standard Time"));
-
             /* 認証用データをスクレイピング */
             var doc = new HtmlAgilityPack.HtmlDocument();
 
@@ -89,7 +81,7 @@ namespace PostDietProgress.Service
             var authCode = doc.DocumentNode.SelectSingleNode("//textarea[@readonly='readonly' and @id='code']").InnerText;
 
             /* リクエストトークン取得処理 */
-            await GetTokenAsync(localTime, await RequestTokenAsync(authCode));
+            await GetTokenAsync(await RequestTokenAsync(authCode));
         }
 
         /// <summary>
@@ -180,15 +172,21 @@ namespace PostDietProgress.Service
         /// </summary>
         /// <param name="localTime"></param>
         /// <returns></returns>
-        public async Task<string> GetTokenAsync(DateTime localTime, string jsonData)
+        public async Task<string> GetTokenAsync(string jsonData)
         {
             var tokenData = JsonConvert.DeserializeObject<Token>(jsonData);
 
             await DbSvs.SetSettingDbVal(SettingDbEnum.RequestToken, tokenData.access_token);
-            await DbSvs.SetSettingDbVal(SettingDbEnum.ExpiresIn, localTime.AddDays(30).ToString("yyyyMMddHHmm"));
+            await DbSvs.SetSettingDbVal(SettingDbEnum.ExpiresIn, Setting.LocalTime.AddDays(30).ToString("yyyyMMddHHmm"));
             await DbSvs.SetSettingDbVal(SettingDbEnum.RefreshToken, tokenData.refresh_token);
 
             return tokenData.access_token;
+        }
+
+        public async Task GetRefreshToken()
+        {
+            var refreshToken = await DbSvs.GetSettingDbVal(SettingDbEnum.RefreshToken);
+            Setting.TanitaRequestToken = await GetTokenAsync(await RequestTokenAsync(refreshToken, true));
         }
 
         /// <summary>
@@ -226,10 +224,10 @@ namespace PostDietProgress.Service
         /// </summary>
         /// <param name="localTime"></param>
         /// <returns></returns>
-        public async Task<double> GetWeekAverageWeightAsync(DateTime localTime)
+        public async Task<double> GetWeekAverageWeightAsync()
         {
             /* 今週の体重を取得 */
-            var thisWeekData = await DbSvs.GetThisWeekHealthData(localTime);
+            var thisWeekData = await DbSvs.GetThisWeekHealthData();
             var weightSum = 0.0;
 
             try
