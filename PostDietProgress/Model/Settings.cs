@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using System;
 using System.Data.SQLite;
 using TimeZoneConverter;
@@ -23,6 +23,8 @@ namespace PostDietProgress
         public Double OriginalWeight => Double.Parse(configuration["Setting:OriginalWeight"]);
 
         public Double GoalWeight => Double.Parse(configuration["Setting:GoalWeight"]);
+
+        public bool PostGoogleFit => bool.Parse(configuration["Setting:PostGoogleFit"]);
 
         public SQLiteConnectionStringBuilder SqlConnectionSb => new SQLiteConnectionStringBuilder { DataSource = "DietProgress.db" };
 
