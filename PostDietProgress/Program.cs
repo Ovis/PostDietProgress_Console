@@ -108,7 +108,7 @@ namespace PostDietProgress
 
                 if (setting.PostGoogleFit)
                 {
-                    var googleFitService = new GoogleFitService(setting);
+                    var googleFitService = new GoogleFitService(setting, httpClient);
                     await googleFitService.PostGoogleFit(health);
                 }
 
@@ -123,6 +123,14 @@ namespace PostDietProgress
                 await dbSvs.CreateTable();
                 await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
                 await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
+
+                //GoogleAPI処理
+                if (setting.PostGoogleFit)
+                {
+                    var googleFitService = new GoogleFitService(setting, httpClient);
+                    await googleFitService.GetGoogleOAuth();
+                }
+
                 Console.WriteLine("初期処理が完了しました。");
                 return;
             }
