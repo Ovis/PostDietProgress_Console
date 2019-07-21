@@ -39,7 +39,7 @@ namespace PostDietProgress
                 /* エラーフラグ確認 */
                 var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);
 
-                if(errorFlag == "1")
+                if (errorFlag == "1")
                 {
                     await healthPlanetSvs.GetRefreshToken();
                     try
@@ -53,7 +53,8 @@ namespace PostDietProgress
                         throw;
                     }
                     return;
-                }else if (errorFlag == "2")
+                }
+                else if (errorFlag == "2")
                 {
                     return;
                 }
@@ -105,6 +106,12 @@ namespace PostDietProgress
                 var sendData = await discordService.CreateSendDataAsync(health, healthData.height, latestDate);
                 await discordService.SendDiscordAsync(sendData);
 
+                if (setting.PostGoogleFit)
+                {
+                    var googleFitService = new GoogleFitService(setting, httpClient);
+                    await googleFitService.PostGoogleFit(health);
+                }
+
                 /* 前回情報をDBに登録 */
                 await dbSvs.SetHealthData(latestDate, health);
             }
@@ -116,6 +123,14 @@ namespace PostDietProgress
                 await dbSvs.CreateTable();
                 await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
                 await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
+
+                //GoogleAPI処理
+                if (setting.PostGoogleFit)
+                {
+                    var googleFitService = new GoogleFitService(setting, httpClient);
+                    await googleFitService.GetGoogleOAuth();
+                }
+
                 Console.WriteLine("初期処理が完了しました。");
                 return;
             }
