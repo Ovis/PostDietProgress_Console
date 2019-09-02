@@ -69,7 +69,7 @@ namespace PostDietProgress.Service
                     },
                     "user",
                     CancellationToken.None,
-                    new FileDataStore("GoogleFitnessAuth", true)//trueにするとカレントパスに保存
+                    new FileDataStore(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GoogleFitnessAuth"), true)//trueにするとカレントパスに保存
                     );
 
                 var fitnessService = new FitnessService(new BaseClientService.Initializer()
