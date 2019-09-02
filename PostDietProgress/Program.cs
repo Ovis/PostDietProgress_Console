@@ -52,6 +52,7 @@ namespace PostDietProgress
                         await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "2");
                         throw;
                     }
+                    await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
                     return;
                 }
                 else if (errorFlag == "2")
