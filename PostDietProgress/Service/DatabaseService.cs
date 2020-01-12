@@ -1,8 +1,8 @@
 ﻿using Dapper;
+using Microsoft.Data.Sqlite;
 using PostDietProgress.Model;
 using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -25,7 +25,7 @@ namespace PostDietProgress.Service
         public async Task CreateTable()
         {
             /* データ保管用テーブル作成 */
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            using (var dbConn = new SqliteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 await dbConn.OpenAsync();
                 using (var cmd = dbConn.CreateCommand())
@@ -90,7 +90,7 @@ namespace PostDietProgress.Service
         {
             var key = GetDbKey(keyType);
 
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            using (var dbConn = new SqliteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 var dbObj = (await dbConn.QueryAsync<SettingDB>("SELECT KEY, VALUE FROM SETTING WHERE KEY = '" + key + "'")).FirstOrDefault();
 
@@ -108,7 +108,7 @@ namespace PostDietProgress.Service
         {
             var key = GetDbKey(keyType);
 
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            using (var dbConn = new SqliteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 await dbConn.OpenAsync();
                 using (var tran = dbConn.BeginTransaction())
@@ -117,7 +117,7 @@ namespace PostDietProgress.Service
                     {
                         var strBuilder = new StringBuilder();
 
-                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @VAL WHERE KEY = @KEY");
+                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @Val WHERE KEY = @Key");
                         await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = key, Val = val }, tran);
 
                         tran.Commit();
@@ -142,7 +142,7 @@ namespace PostDietProgress.Service
             await SetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate, latestDate);
             await SetSettingDbVal(SettingDbEnum.PreviousWeight, healthData.Weight);
 
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            using (var dbConn = new SqliteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 await dbConn.OpenAsync();
                 using (var tran = dbConn.BeginTransaction())
@@ -186,20 +186,20 @@ namespace PostDietProgress.Service
             var searchStartDateHour = thisTime.AddDays(-1).AddHours(-6).ToString("yyyyMMddHHmm");
             var searchEndDateHour = thisTime.AddDays(-1).AddHours(6).ToString("yyyyMMddHHmm");
 
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            using (var dbConn = new SqliteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 var sql = "SELECT * FROM HEALTHDATA WHERE DATETIME BETWEEN @START AND @END";
                 try
                 {
-                    var dbObj = await dbConn.QueryAsync<HealthData>(sql, new { Start = searchStartDateHour, End = searchEndDateHour });
+                    var dbObj = await dbConn.QueryAsync<HealthData>(sql, new { START = searchStartDateHour, END = searchEndDateHour });
 
                     /* 複数取得できる場合、一番近しいものを取得 */
                     var tmp = long.MaxValue;
                     HealthData result = null;
                     foreach (var item in dbObj)
                     {
-                       var diff = long.Parse(dateTime) - long.Parse(item.DateTime);
-                        if(tmp > diff)
+                        var diff = long.Parse(dateTime) - long.Parse(item.DateTime);
+                        if (tmp > diff)
                         {
                             tmp = diff;
                             result = item;
@@ -224,12 +224,12 @@ namespace PostDietProgress.Service
             var searchStartDateHour = Setting.LocalTime.AddDays(-7).AddHours(-6).ToString("yyyyMMddHHmm");
             var searchEndDateHour = Setting.LocalTime.ToString("yyyyMMddHHmm");
 
-            using (var dbConn = new SQLiteConnection(Setting.SqlConnectionSb.ToString()))
+            using (var dbConn = new SqliteConnection(Setting.SqlConnectionSb.ToString()))
             {
                 var sql = "SELECT * FROM HEALTHDATA WHERE DATETIME BETWEEN @START AND @END";
                 try
                 {
-                    return (await dbConn.QueryAsync<HealthData>(sql, new { Start = searchStartDateHour, End = searchEndDateHour })).ToList();
+                    return (await dbConn.QueryAsync<HealthData>(sql, new { START = searchStartDateHour, END = searchEndDateHour })).ToList();
                 }
                 catch
                 {

@@ -1,6 +1,6 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Configuration;
 using System;
-using System.Data.SQLite;
 using System.IO;
 using TimeZoneConverter;
 
@@ -31,7 +31,7 @@ namespace PostDietProgress
 
         public String GoogleFitClientSecret => configuration["Setting:GoogleFitSettings:ClientSecret"];
 
-        public SQLiteConnectionStringBuilder SqlConnectionSb => new SQLiteConnectionStringBuilder { DataSource = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DietProgress.db") };
+        public SqliteConnectionStringBuilder SqlConnectionSb => new SqliteConnectionStringBuilder { DataSource = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DietProgress.db") };
 
         public DateTime LocalTime { get; set; }
 
