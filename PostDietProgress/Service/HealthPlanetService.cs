@@ -1,4 +1,6 @@
 ﻿using Newtonsoft.Json;
+using PostDietProgress.Model;
+using PostDietProgress.Model.Json;
 using System;
 using System.Globalization;
 using System.IO;
@@ -7,7 +9,6 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
-using PostDietProgress.Model;
 using TimeZoneConverter;
 
 namespace PostDietProgress.Service

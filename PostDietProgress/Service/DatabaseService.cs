@@ -83,12 +83,10 @@ namespace PostDietProgress.Service
         {
             var key = GetDbKey(keyType);
 
-            using (var dbConn = new SqliteConnection(_setting.SqlConnectionSb.ToString()))
-            {
-                var dbObj = (await dbConn.QueryAsync<SettingDb>("SELECT KEY, VALUE FROM SETTING WHERE KEY = '" + key + "'")).FirstOrDefault();
+            await using var dbConn = new SqliteConnection(_setting.SqlConnectionSb.ToString());
+            var dbObj = (await dbConn.QueryAsync<SettingDb>("SELECT KEY, VALUE FROM SETTING WHERE KEY = '" + key + "'")).FirstOrDefault();
 
-                return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
-            }
+            return dbObj == null ? null : (string.IsNullOrEmpty(dbObj.Value) ? null : dbObj.Value);
         }
 
         /// <summary>
@@ -101,26 +99,22 @@ namespace PostDietProgress.Service
         {
             var key = GetDbKey(keyType);
 
-            using (var dbConn = new SqliteConnection(_setting.SqlConnectionSb.ToString()))
+            await using var dbConn = new SqliteConnection(_setting.SqlConnectionSb.ToString());
+            await dbConn.OpenAsync();
+            await using var tran = dbConn.BeginTransaction();
+            try
             {
-                await dbConn.OpenAsync();
-                using (var tran = dbConn.BeginTransaction())
-                {
-                    try
-                    {
-                        var strBuilder = new StringBuilder();
+                var strBuilder = new StringBuilder();
 
-                        strBuilder.AppendLine("UPDATE SETTING SET VALUE = @Val WHERE KEY = @Key");
-                        await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = key, Val = val }, tran);
+                strBuilder.AppendLine("UPDATE SETTING SET VALUE = @Val WHERE KEY = @Key");
+                await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = key, Val = val }, tran);
 
-                        tran.Commit();
-                    }
-                    catch
-                    {
-                        tran.Rollback();
-                        throw;
-                    }
-                }
+                tran.Commit();
+            }
+            catch
+            {
+                tran.Rollback();
+                throw;
             }
         }
 

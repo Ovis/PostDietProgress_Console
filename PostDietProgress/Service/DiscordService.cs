@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using PostDietProgress.Model;
+using PostDietProgress.Model.Json;
 using System;
 using System.Globalization;
 using System.IO;
@@ -79,7 +80,7 @@ namespace PostDietProgress.Service
             {
                 /* 前週の体重平均値を取得 */
                 var prevWeekWeight = await _dbSvs.GetSettingDbVal(SettingDbEnum.PrevWeekWeight);
-                if (!string.IsNullOrEmpty(prevWeekWeight))
+                if (!string.IsNullOrEmpty(prevWeekWeight) && !prevWeekWeight.Equals("NaN"))
                 {
                     var thisWeekWeightAverage = await _healthPlanetSvs.GetWeekAverageWeightAsync();
 
