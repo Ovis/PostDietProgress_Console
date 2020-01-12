@@ -1,13 +1,11 @@
-﻿using System;
-
-namespace PostDietProgress
+﻿namespace PostDietProgress.Model
 {
     public class Token
     {
-        public String access_token { get; set; }
+        public string AccessToken { get; set; }
 
-        public int expires_in { get; set; }
+        public int ExpiresIn { get; set; }
 
-        public String refresh_token { get; set; }
+        public string RefreshToken { get; set; }
     }
 }

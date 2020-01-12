@@ -11,17 +11,17 @@ namespace PostDietProgress.Service
 {
     class DiscordService
     {
-        Settings Setting;
-        HttpClient HttpClient;
-        DatabaseService DBSvs;
-        HealthPlanetService HealthPlanetSvs;
+        Settings _setting;
+        HttpClient _httpClient;
+        DatabaseService _dbSvs;
+        HealthPlanetService _healthPlanetSvs;
 
         public DiscordService(Settings setting, HttpClient httpClient, DatabaseService dbSvs, HealthPlanetService healthPlanetSvs)
         {
-            Setting = setting;
-            HttpClient = httpClient;
-            DBSvs = dbSvs;
-            HealthPlanetSvs = healthPlanetSvs;
+            _setting = setting;
+            _httpClient = httpClient;
+            _dbSvs = dbSvs;
+            _healthPlanetSvs = healthPlanetSvs;
         }
 
         /// <summary>
@@ -30,7 +30,6 @@ namespace PostDietProgress.Service
         /// <param name="healthData">身体情報</param>
         /// <param name="height">身長</param>
         /// <param name="date">日付</param>
-        /// <param name="previousDate">前回測定日付</param>
         /// <returns></returns>
         public async Task<string> CreateSendDataAsync(HealthData healthData, string height, string date)
         {
@@ -39,7 +38,7 @@ namespace PostDietProgress.Service
 
             if (!DateTime.TryParseExact(date, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var dt))
             {
-                dt = Setting.LocalTime;
+                dt = _setting.LocalTime;
             }
 
             /* BMI */
@@ -48,7 +47,7 @@ namespace PostDietProgress.Service
             var bmi = Math.Round((weight / Math.Pow(cm, 2)), 2);
 
             /* 目標達成率 */
-            var goal = Math.Round(((1 - (weight - Setting.GoalWeight) / (Setting.OriginalWeight - Setting.GoalWeight)) * 100), 2);
+            var goal = Math.Round(((1 - (weight - _setting.GoalWeight) / (_setting.OriginalWeight - _setting.GoalWeight)) * 100), 2);
 
             /* 投稿文章 */
             var postData = dt.ToString("yyyy年MM月dd日(ddd)") + " " + dt.ToShortTimeString() + "のダイエット進捗" + Environment.NewLine
@@ -57,7 +56,7 @@ namespace PostDietProgress.Service
                           + "目標達成率:" + goal + "%" + Environment.NewLine;
 
             /* 前回測定データがあるならそれも投稿 */
-            var previousHealthData = await DBSvs.GetPreviousDataAsync(healthData.DateTime);
+            var previousHealthData = await _dbSvs.GetPreviousDataAsync(healthData.DateTime);
 
             if (previousHealthData != null)
             {
@@ -67,33 +66,35 @@ namespace PostDietProgress.Service
 
                 DateTime.TryParseExact(previousHealthData.DateTime, "yyyyMMddHHmm", jst, DateTimeStyles.AssumeLocal, out DateTime prevDate);
 
-                postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight.ToString() + "kgの変化" + Environment.NewLine;
+                postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight + "kgの変化" + Environment.NewLine;
 
-                postData += diffWeight >= 0 ? (diffWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
+                postData += diffWeight >= 0 ? (Math.Abs(diffWeight) < 0.00000001 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
             }
 
             /* 日曜日なら移動平均計算 */
-            var tmpHM = new TimeSpan(dt.Ticks);
+            var tmpHm = new TimeSpan(dt.Ticks);
             var nightStart = new TimeSpan(18, 00, 00);
             var nightEnd = new TimeSpan(05, 00, 00);
-            if (dt.ToString("ddd", utc) == "Sun" && (tmpHM > nightStart || tmpHM < nightEnd))
+            if (dt.ToString("ddd", utc) == "Sun" && (tmpHm > nightStart || tmpHm < nightEnd))
             {
                 /* 前週の体重平均値を取得 */
-                var prevWeekWeight = await DBSvs.GetSettingDbVal(SettingDbEnum.PrevWeekWeight);
+                var prevWeekWeight = await _dbSvs.GetSettingDbVal(SettingDbEnum.PrevWeekWeight);
                 if (!string.IsNullOrEmpty(prevWeekWeight))
                 {
-                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync();
+                    var thisWeekWeightAverage = await _healthPlanetSvs.GetWeekAverageWeightAsync();
 
                     var averageWeight = Math.Round((thisWeekWeightAverage - double.Parse(prevWeekWeight)), 2);
 
                     postData += "前週の平均体重:" + prevWeekWeight + "kg   今週の平均体重:" + thisWeekWeightAverage + "kg" + Environment.NewLine;
                     postData += "移動平均値: " + averageWeight + "kg" + Environment.NewLine;
-                    postData += averageWeight >= 0 ? (averageWeight == 0 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
+                    //2進浮動小数点数の比較のため
+                    //https://dobon.net/vb/dotnet/beginner/floatingpointerror.html
+                    postData += averageWeight >= 0 ? (Math.Abs(averageWeight) < 0.00000001 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
                 }
                 else
                 {
-                    var thisWeekWeightAverage = await HealthPlanetSvs.GetWeekAverageWeightAsync();
-                    await DBSvs.SetSettingDbVal(SettingDbEnum.PrevWeekWeight, thisWeekWeightAverage.ToString());
+                    var thisWeekWeightAverage = await _healthPlanetSvs.GetWeekAverageWeightAsync();
+                    await _dbSvs.SetSettingDbVal(SettingDbEnum.PrevWeekWeight, thisWeekWeightAverage.ToString(CultureInfo.CurrentCulture));
                 }
             }
 
@@ -109,14 +110,14 @@ namespace PostDietProgress.Service
         {
             var jsonData = new DiscordJson
             {
-                content = sendData
+                Content = sendData
             };
 
             var json = JsonConvert.SerializeObject(jsonData);
 
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var response = await HttpClient.PostAsync(Setting.DiscordWebhookUrl, content);
+            var response = await _httpClient.PostAsync(_setting.DiscordWebhookUrl, content);
 
             using (var stream = (await response.Content.ReadAsStreamAsync()))
             using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)

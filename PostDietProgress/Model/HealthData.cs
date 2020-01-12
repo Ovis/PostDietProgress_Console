@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace PostDietProgress.Model
 {
@@ -35,9 +34,7 @@ namespace PostDietProgress.Model
         /* 推定骨量(kg) */
         public string BoneQuantity { get; set; }
 
-        public HealthData() { }
-
-        public HealthData(string dateTime, Dictionary<string,string> dic)
+        public HealthData(string dateTime, Dictionary<string, string> dic)
         {
             DateTime = dateTime;
 
@@ -73,8 +70,6 @@ namespace PostDietProgress.Model
                         break;
                     case HealthTag.BONEQUANTITY:
                         BoneQuantity = dic[((int)HealthTag.BONEQUANTITY).ToString()];
-                        break;
-                    default:
                         break;
                 }
             }

@@ -1,21 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
-namespace PostDietProgress
+namespace PostDietProgress.Model
 {
-    class InnerScan
+    public class InnerScan
     {
         public class Health
         {
-            public String date { get; set; }
-            public String keydata { get; set; }
-            public String model { get; set; }
-            public String tag { get; set; }
+            public string Date { get; set; }
+            public string Keydata { get; set; }
+            public string Model { get; set; }
+            public string Tag { get; set; }
         }
 
-        public String birth_date { get; set; }
-        public List<Health> data { get; set; }
-        public String height { get; set; }
-        public String sex { get; set; }
+        public string BirthDate { get; set; }
+        public List<Health> Data { get; set; }
+        public string Height { get; set; }
+        public string Sex { get; set; }
     }
 }

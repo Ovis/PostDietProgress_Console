@@ -2,14 +2,14 @@
 {
     public class GoogleUserCode
     {
-        public string device_code { get; set; }
+        public string DeviceCode { get; set; }
 
-        public string user_code { get; set; }
+        public string UserCode { get; set; }
 
-        public string verification_url { get; set; }
+        public string VerificationUrl { get; set; }
 
-        public int expires_in { get; set; }
+        public int ExpiresIn { get; set; }
 
-        public int interval { get; set; }
+        public int Interval { get; set; }
     }
 }

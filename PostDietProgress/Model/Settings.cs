@@ -4,32 +4,32 @@ using System;
 using System.IO;
 using TimeZoneConverter;
 
-namespace PostDietProgress
+namespace PostDietProgress.Model
 {
     public class Settings
     {
-        IConfigurationRoot configuration = new ConfigurationBuilder()
+        IConfigurationRoot _configuration = new ConfigurationBuilder()
             .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
             .AddJsonFile("App.config.json", optional: true)
             .Build();
 
-        public String TanitaClientID => configuration["Setting:TanitaClientID"];
+        public string TanitaClientId => _configuration["Setting:TanitaClientID"];
 
-        public String TanitaClientSecretToken => configuration["Setting:TanitaClientSecretToken"];
+        public string TanitaClientSecretToken => _configuration["Setting:TanitaClientSecretToken"];
 
-        public String TanitaRequestToken { get; set; }
+        public string TanitaRequestToken { get; set; }
 
-        public String DiscordWebhookUrl => configuration["Setting:DiscordWebhookUrl"];
+        public string DiscordWebhookUrl => _configuration["Setting:DiscordWebhookUrl"];
 
-        public Double OriginalWeight => Double.Parse(configuration["Setting:OriginalWeight"]);
+        public double OriginalWeight => Double.Parse(_configuration["Setting:OriginalWeight"]);
 
-        public Double GoalWeight => Double.Parse(configuration["Setting:GoalWeight"]);
+        public double GoalWeight => Double.Parse(_configuration["Setting:GoalWeight"]);
 
-        public bool PostGoogleFit => bool.Parse(configuration["Setting:GoogleFitSettings:Enabled"]);
+        public bool PostGoogleFit => bool.Parse(_configuration["Setting:GoogleFitSettings:Enabled"]);
 
-        public String GoogleFitClientId => configuration["Setting:GoogleFitSettings:ClientId"];
+        public string GoogleFitClientId => _configuration["Setting:GoogleFitSettings:ClientId"];
 
-        public String GoogleFitClientSecret => configuration["Setting:GoogleFitSettings:ClientSecret"];
+        public string GoogleFitClientSecret => _configuration["Setting:GoogleFitSettings:ClientSecret"];
 
         public SqliteConnectionStringBuilder SqlConnectionSb => new SqliteConnectionStringBuilder { DataSource = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DietProgress.db") };
 

@@ -1,10 +1,10 @@
 ﻿using System;
 
-namespace PostDietProgress
+namespace PostDietProgress.Model
 {
     [Serializable]
     sealed class DiscordJson
     {
-        public string content;
+        public string Content;
     }
 }

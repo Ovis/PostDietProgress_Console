@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
+using PostDietProgress.Model;
 using TimeZoneConverter;
 
 namespace PostDietProgress.Service
@@ -14,18 +15,18 @@ namespace PostDietProgress.Service
     public class HealthPlanetService
     {
         #region prop
-        private HttpClientHandler Handler;
-        private HttpClient HttpClient;
-        private Settings Setting;
-        private DatabaseService DbSvs;
+        private HttpClientHandler _handler;
+        private HttpClient _httpClient;
+        private Settings _setting;
+        private DatabaseService _dbSvs;
         #endregion
 
         public HealthPlanetService(HttpClient client, HttpClientHandler handler, DatabaseService dbSvs, Settings setting)
         {
-            HttpClient = client;
-            Handler = handler;
-            Setting = setting;
-            DbSvs = dbSvs;
+            _httpClient = client;
+            _handler = handler;
+            _setting = setting;
+            _dbSvs = dbSvs;
         }
 
         /// <summary>
@@ -34,23 +35,16 @@ namespace PostDietProgress.Service
         /// <returns></returns>
         public async Task GetHealthPlanetToken()
         {
-            DateTime.TryParseExact(await DbSvs.GetSettingDbVal(SettingDbEnum.ExpiresIn), "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var expireDate);
+            DateTime.TryParseExact(await _dbSvs.GetSettingDbVal(SettingDbEnum.ExpiresIn), "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var expireDate);
 
-            try
+            if (expireDate < _setting.LocalTime)
             {
-                if (expireDate < Setting.LocalTime)
-                {
-                    /* 有効期限が切れている場合はリフレッシュトークンで改めて取得 */
-                    await GetRefreshToken();
-                }
-                else
-                {
-                    Setting.TanitaRequestToken = await DbSvs.GetSettingDbVal(SettingDbEnum.RequestToken);
-                }
+                /* 有効期限が切れている場合はリフレッシュトークンで改めて取得 */
+                await GetRefreshToken();
             }
-            catch
+            else
             {
-                throw;
+                _setting.TanitaRequestToken = await _dbSvs.GetSettingDbVal(SettingDbEnum.RequestToken);
             }
         }
 
@@ -93,7 +87,7 @@ namespace PostDietProgress.Service
             /* ログイン認証先URL */
             var authUrl = new StringBuilder();
             authUrl.Append("https://www.healthplanet.jp/oauth/auth?");
-            authUrl.Append("client_id=" + Setting.TanitaClientID);
+            authUrl.Append("client_id=" + _setting.TanitaClientId);
             authUrl.Append("&redirect_uri=https://localhost/");
             authUrl.Append("&scope=innerscan");
             authUrl.Append("&response_type=code");
@@ -106,15 +100,13 @@ namespace PostDietProgress.Service
 
             var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
 
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/login_oauth.do", contentShift);
+            var response = await _httpClient.PostAsync("https://www.healthplanet.jp/login_oauth.do", contentShift);
 
-            var cookies = Handler.CookieContainer.GetCookies(new Uri("https://www.healthplanet.jp/"));
+            _handler.CookieContainer.GetCookies(new Uri("https://www.healthplanet.jp/"));
 
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
+            await using var stream = (await response.Content.ReadAsStreamAsync());
+            using var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader;
+            return await reader.ReadToEndAsync();
         }
 
         /// <summary>
@@ -130,19 +122,18 @@ namespace PostDietProgress.Service
 
             var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
 
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/oauth/approval.do", contentShift);
+            var response = await _httpClient.PostAsync("https://www.healthplanet.jp/oauth/approval.do", contentShift);
 
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
+            await using var stream = (await response.Content.ReadAsStreamAsync());
+            using var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader;
+            return await reader.ReadToEndAsync();
         }
 
         /// <summary>
         /// トークン情報取得
         /// </summary>
         /// <param name="token"></param>
+        /// <param name="reFlg"></param>
         /// <returns></returns>
         public async Task<string> RequestTokenAsync(string token, bool reFlg = false)
         {
@@ -150,43 +141,40 @@ namespace PostDietProgress.Service
             var code = reFlg ? "refresh_token" : "code";
 
             var postString = new StringBuilder();
-            postString.Append("client_id=" + Setting.TanitaClientID + "&");
-            postString.Append("client_secret=" + Setting.TanitaClientSecretToken + "&");
+            postString.Append("client_id=" + _setting.TanitaClientId + "&");
+            postString.Append("client_secret=" + _setting.TanitaClientSecretToken + "&");
             postString.Append("redirect_uri=" + HttpUtility.UrlEncode("http://localhost/", Encoding.GetEncoding("shift_jis")) + "&");
             postString.Append(code + "=" + token + "&");
             postString.Append("grant_type=" + grantType);
 
             var contentShift = new StringContent(postString.ToString(), Encoding.GetEncoding("shift_jis"), "application/x-www-form-urlencoded");
 
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/oauth/token", contentShift);
+            var response = await _httpClient.PostAsync("https://www.healthplanet.jp/oauth/token", contentShift);
 
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
+            await using var stream = (await response.Content.ReadAsStreamAsync());
+            using var reader = (new StreamReader(stream, Encoding.GetEncoding("Shift_JIS"), true)) as TextReader;
+            return await reader.ReadToEndAsync();
         }
 
         /// <summary>
         /// リクエストトークン取得処理
         /// </summary>
-        /// <param name="localTime"></param>
         /// <returns></returns>
         public async Task<string> GetTokenAsync(string jsonData)
         {
             var tokenData = JsonConvert.DeserializeObject<Token>(jsonData);
 
-            await DbSvs.SetSettingDbVal(SettingDbEnum.RequestToken, tokenData.access_token);
-            await DbSvs.SetSettingDbVal(SettingDbEnum.ExpiresIn, Setting.LocalTime.AddDays(30).ToString("yyyyMMddHHmm"));
-            await DbSvs.SetSettingDbVal(SettingDbEnum.RefreshToken, tokenData.refresh_token);
+            await _dbSvs.SetSettingDbVal(SettingDbEnum.RequestToken, tokenData.AccessToken);
+            await _dbSvs.SetSettingDbVal(SettingDbEnum.ExpiresIn, _setting.LocalTime.AddDays(30).ToString("yyyyMMddHHmm"));
+            await _dbSvs.SetSettingDbVal(SettingDbEnum.RefreshToken, tokenData.RefreshToken);
 
-            return tokenData.access_token;
+            return tokenData.AccessToken;
         }
 
         public async Task GetRefreshToken()
         {
-            var refreshToken = await DbSvs.GetSettingDbVal(SettingDbEnum.RefreshToken);
-            Setting.TanitaRequestToken = await GetTokenAsync(await RequestTokenAsync(refreshToken, true));
+            var refreshToken = await _dbSvs.GetSettingDbVal(SettingDbEnum.RefreshToken);
+            _setting.TanitaRequestToken = await GetTokenAsync(await RequestTokenAsync(refreshToken, true));
         }
 
         /// <summary>
@@ -197,7 +185,7 @@ namespace PostDietProgress.Service
         {
             var postString = new StringBuilder();
             /* アクセストークン */
-            postString.Append("access_token=" + Setting.TanitaRequestToken + "&");
+            postString.Append("access_token=" + _setting.TanitaRequestToken + "&");
             /* 測定日付で取得 */
             postString.Append("date=1&");
             /* 取得期間From,To */
@@ -210,24 +198,21 @@ namespace PostDietProgress.Service
 
             var contentShift = new StringContent(postString.ToString(), Encoding.UTF8, "application/x-www-form-urlencoded");
 
-            var response = await HttpClient.PostAsync("https://www.healthplanet.jp/status/innerscan.json", contentShift);
+            var response = await _httpClient.PostAsync("https://www.healthplanet.jp/status/innerscan.json", contentShift);
 
-            using (var stream = (await response.Content.ReadAsStreamAsync()))
-            using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
-            {
-                return await reader.ReadToEndAsync();
-            }
+            await using var stream = (await response.Content.ReadAsStreamAsync());
+            using var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader;
+            return await reader.ReadToEndAsync();
         }
 
         /// <summary>
         /// 今週の平均体重を取得
         /// </summary>
-        /// <param name="localTime"></param>
         /// <returns></returns>
         public async Task<double> GetWeekAverageWeightAsync()
         {
             /* 今週の体重を取得 */
-            var thisWeekData = await DbSvs.GetThisWeekHealthData();
+            var thisWeekData = await _dbSvs.GetThisWeekHealthData();
             var weightSum = 0.0;
 
             try

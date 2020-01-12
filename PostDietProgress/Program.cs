@@ -62,7 +62,7 @@ namespace PostDietProgress
                         }
 
                         /* 前回測定日時 */
-                        var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
+                        var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurementDate);
 
                         if (!string.IsNullOrEmpty(previousDate))
                         {
@@ -77,7 +77,7 @@ namespace PostDietProgress
                         await healthPlanetSvs.GetHealthPlanetToken();
 
                         /* 身体データ取得 */
-                        InnerScan healthData = null;
+                        InnerScan healthData;
                         try
                         {
                             healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
@@ -89,11 +89,11 @@ namespace PostDietProgress
                             throw;
                         }
 
-                        var healthList = healthData.data;
+                        var healthList = healthData.Data;
 
                         /* 最新の日付のデータを取得 */
-                        healthList.Sort((a, b) => string.Compare(b.date, a.date));
-                        var latestDate = healthList.First().date.ToString();
+                        healthList.Sort((a, b) => string.CompareOrdinal(b.Date, a.Date));
+                        var latestDate = healthList.First().Date;
 
                         if (latestDate.Equals(previousDate))
                         {
@@ -102,10 +102,10 @@ namespace PostDietProgress
                         }
 
                         /* Discordに送るためのデータをDictionary化 */
-                        var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
+                        var health = new HealthData(latestDate, healthList.Where(x => x.Date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.Tag, x => x.Keydata));
 
                         /* Discordに送信 */
-                        var sendData = await discordService.CreateSendDataAsync(health, healthData.height, latestDate);
+                        var sendData = await discordService.CreateSendDataAsync(health, healthData.Height, latestDate);
                         await discordService.SendDiscordAsync(sendData);
 
                         if (setting.PostGoogleFit)
