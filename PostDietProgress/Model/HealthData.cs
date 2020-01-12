@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace PostDietProgress.Model
 {
@@ -37,7 +36,7 @@ namespace PostDietProgress.Model
 
         public HealthData() { }
 
-        public HealthData(string dateTime, Dictionary<string,string> dic)
+        public HealthData(string dateTime, Dictionary<string, string> dic)
         {
             DateTime = dateTime;
 

@@ -15,25 +15,26 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using PostDietProgress.Model.Json;
 
 namespace PostDietProgress.Service
 {
     public class GoogleFitService
     {
         #region prop
-        private Settings Setting;
-        private HttpClient HttpClient;
+        private Settings _setting;
+        private HttpClient _httpClient;
         #endregion
 
-        private static readonly DateTime unixEpochStart = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        private const string userId = "me";
-        private const string dataTypeName = "com.google.weight";
-        private static NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
+        private static readonly DateTime UnixEpochStart = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        private const string UserId = "me";
+        private const string DataTypeName = "com.google.weight";
+        private static NLog.Logger _logger = NLog.LogManager.GetCurrentClassLogger();
 
         public GoogleFitService(Settings settings, HttpClient client)
         {
-            Setting = settings;
-            HttpClient = client;
+            _setting = settings;
+            _httpClient = client;
         }
 
         /// <summary>
@@ -43,26 +44,25 @@ namespace PostDietProgress.Service
         /// <returns></returns>
         public static long GetUnixEpochNanoSeconds(DateTime dt)
         {
-            return (dt.Ticks - unixEpochStart.Ticks) * 100;
+            return (dt.Ticks - UnixEpochStart.Ticks) * 100;
         }
 
         /// <summary>
         /// GoogleFit投稿処理
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="health"></param>
         /// <returns></returns>
         public async Task PostGoogleFit(HealthData health)
         {
             try
             {
-                UserCredential credential;
-                credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
+                var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
                     new ClientSecrets
                     {
-                        ClientId = Setting.GoogleFitClientId,
-                        ClientSecret = Setting.GoogleFitClientSecret
+                        ClientId = _setting.GoogleFitClientId,
+                        ClientSecret = _setting.GoogleFitClientSecret
                     },
-                    new string[]
+                    new[]
                     {
                         FitnessService.Scope.FitnessBodyRead,
                         FitnessService.Scope.FitnessBodyWrite
@@ -70,7 +70,7 @@ namespace PostDietProgress.Service
                     "user",
                     CancellationToken.None,
                     new FileDataStore(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GoogleFitnessAuth"), true)//trueにするとカレントパスに保存
-                    );
+                );
 
                 var fitnessService = new FitnessService(new BaseClientService.Initializer()
                 {
@@ -89,7 +89,7 @@ namespace PostDietProgress.Service
                     },
                     DataType = new DataType()
                     {
-                        Name = dataTypeName,
+                        Name = DataTypeName,
                         Field = new List<DataTypeField>()
                     {
                         new DataTypeField() {Name = "weight", Format = "floatPoint"}
@@ -105,39 +105,37 @@ namespace PostDietProgress.Service
                     }
                 };
 
-                var dataSourceId = $"{dataSource.Type}:{dataSource.DataType.Name}:{Setting.GoogleFitClientId.Split('-')[0]}:{dataSource.Device.Manufacturer}:{dataSource.Device.Model}:{dataSource.Device.Uid}:{dataSource.DataStreamName}";
+                var dataSourceId = $"{dataSource.Type}:{dataSource.DataType.Name}:{_setting.GoogleFitClientId.Split('-')[0]}:{dataSource.Device.Manufacturer}:{dataSource.Device.Model}:{dataSource.Device.Uid}:{dataSource.DataStreamName}";
 
-                var dataSrcList = await fitnessService.Users.DataSources.List(userId).ExecuteAsync();
+                var dataSrcList = await fitnessService.Users.DataSources.List(UserId).ExecuteAsync();
 
                 if (dataSrcList.DataSource.Select(s => s.DataStreamId).Any(s => s == dataSourceId))
                 {
-                    dataSource = fitnessService.Users.DataSources.Get(userId, dataSourceId).Execute();
+                    fitnessService.Users.DataSources.Get(UserId, dataSourceId).Execute();
                 }
                 else
                 {
-                    dataSource = fitnessService.Users.DataSources.Create(dataSource, userId).Execute();
+                    fitnessService.Users.DataSources.Create(dataSource, UserId).Execute();
                 }
-
-                var jst = new CultureInfo("ja-JP");
 
                 if (!DateTime.TryParseExact(health.DateTime, "yyyyMMddHHmm", null, DateTimeStyles.AssumeLocal, out var dt))
                 {
-                    dt = Setting.LocalTime;
+                    dt = _setting.LocalTime;
                 }
 
-                var postNanosec = GetUnixEpochNanoSeconds(dt.ToUniversalTime());
+                var postNanoSecond = GetUnixEpochNanoSeconds(dt.ToUniversalTime());
                 var widthDataSource = new Dataset()
                 {
                     DataSourceId = dataSourceId,
-                    MaxEndTimeNs = postNanosec,
-                    MinStartTimeNs = postNanosec,
+                    MaxEndTimeNs = postNanoSecond,
+                    MinStartTimeNs = postNanoSecond,
                     Point = new List<DataPoint>()
                     {
                         new DataPoint()
                         {
-                            DataTypeName = dataTypeName,
-                            StartTimeNanos = postNanosec,
-                            EndTimeNanos = postNanosec,
+                            DataTypeName = DataTypeName,
+                            StartTimeNanos = postNanoSecond,
+                            EndTimeNanos = postNanoSecond,
                             Value = new List<Value>()
                             {
                                 new Value()
@@ -149,13 +147,13 @@ namespace PostDietProgress.Service
                     }
                 };
 
-                var dataSetId = $"{postNanosec}-{postNanosec}";
-                await fitnessService.Users.DataSources.Datasets.Patch(widthDataSource, userId, dataSourceId, dataSetId).ExecuteAsync();
+                var dataSetId = $"{postNanoSecond}-{postNanoSecond}";
+                await fitnessService.Users.DataSources.Datasets.Patch(widthDataSource, UserId, dataSourceId, dataSetId).ExecuteAsync();
 
             }
             catch (Exception e)
             {
-                logger.Info(e.Message + " : " + e.StackTrace);
+                _logger.Info(e.Message + " : " + e.StackTrace);
                 throw;
             }
         }
@@ -176,12 +174,12 @@ namespace PostDietProgress.Service
             try
             {
                 var postString = new StringBuilder();
-                postString.Append("client_id=" + Setting.GoogleFitClientId + "&");
+                postString.Append("client_id=" + _setting.GoogleFitClientId + "&");
                 postString.Append("scope=" + FitnessService.Scope.FitnessBodyRead + " " + FitnessService.Scope.FitnessBodyWrite + "&");
 
                 var content = new StringContent(postString.ToString(), Encoding.UTF8, "application/x-www-form-urlencoded");
 
-                var response = await HttpClient.PostAsync("https://accounts.google.com/o/oauth2/device/code", content);
+                var response = await _httpClient.PostAsync("https://accounts.google.com/o/oauth2/device/code", content);
 
                 using (var stream = (await response.Content.ReadAsStreamAsync()))
                 using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
@@ -189,18 +187,18 @@ namespace PostDietProgress.Service
                     var resultData = await reader.ReadToEndAsync();
                     var json = JsonConvert.DeserializeObject<GoogleUserCode>(resultData);
 
-                    Console.WriteLine("Your UserCode is :" + json.user_code);
-                    Console.WriteLine("Verification Url is :" + json.verification_url);
+                    Console.WriteLine("Your UserCode is :" + json.UserCode);
+                    Console.WriteLine("Verification Url is :" + json.VerificationUrl);
                     Console.WriteLine("Device authorization is required.");
                     Console.WriteLine("Press Enter after you approve.");
                     Console.ReadLine();
 
-                    return json.device_code;
+                    return json.DeviceCode;
                 }
             }
             catch (Exception e)
             {
-                logger.Info(e.Message + " : " + e.StackTrace);
+                _logger.Info(e.Message + " : " + e.StackTrace);
                 throw;
             }
         }
@@ -216,14 +214,14 @@ namespace PostDietProgress.Service
             {
                 var currentDateTime = DateTime.Now;
                 var postString = new StringBuilder();
-                postString.Append("client_id=" + Setting.GoogleFitClientId + "&");
-                postString.Append("client_secret=" + Setting.GoogleFitClientSecret + "&");
+                postString.Append("client_id=" + _setting.GoogleFitClientId + "&");
+                postString.Append("client_secret=" + _setting.GoogleFitClientSecret + "&");
                 postString.Append("code=" + deviceCode + "&");
                 postString.Append("grant_type=" + "http://oauth.net/grant_type/device/1.0" + "&");
 
                 var content = new StringContent(postString.ToString(), Encoding.UTF8, "application/x-www-form-urlencoded");
 
-                var response = await HttpClient.PostAsync("https://accounts.google.com/o/oauth2/token", content);
+                var response = await _httpClient.PostAsync("https://accounts.google.com/o/oauth2/token", content);
 
                 using (var stream = (await response.Content.ReadAsStreamAsync()))
                 using (var reader = (new StreamReader(stream, Encoding.UTF8, true)) as TextReader)
@@ -231,7 +229,7 @@ namespace PostDietProgress.Service
                     var resultData = await reader.ReadToEndAsync();
                     var json = JsonConvert.DeserializeObject<GoogleOAuthToken>(resultData);
 
-                    json.scope = FitnessService.Scope.FitnessBodyRead + " " + FitnessService.Scope.FitnessBodyWrite;
+                    json.Scope = FitnessService.Scope.FitnessBodyRead + " " + FitnessService.Scope.FitnessBodyWrite;
                     json.IssuedUtc = currentDateTime.AddHours(-9).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
                     json.Issued = currentDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'+09:00'");
 
@@ -252,7 +250,7 @@ namespace PostDietProgress.Service
             }
             catch (Exception e)
             {
-                logger.Info(e.Message + " : " + e.StackTrace);
+                _logger.Info(e.Message + " : " + e.StackTrace);
                 throw;
             }
         }

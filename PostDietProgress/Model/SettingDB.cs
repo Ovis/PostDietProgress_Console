@@ -1,10 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace PostDietProgress
+﻿namespace PostDietProgress.Model
 {
-    class SettingDB
+    public class SettingDb
     {
         public string Key { get; set; }
         public string Value { get; set; }
@@ -14,7 +10,7 @@ namespace PostDietProgress
     {
         PreviousWeight,
         PrevWeekWeight,
-        PreviousMeasurememtDate,
+        PreviousMeasurementDate,
         RequestToken,
         ExpiresIn,
         RefreshToken,

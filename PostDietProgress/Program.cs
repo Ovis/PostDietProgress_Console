@@ -32,112 +32,114 @@ namespace PostDietProgress
 
             var healthPlanetSvs = new HealthPlanetService(httpClient, handler, dbSvs, setting);
 
-            if (args.Length == 0)
+            switch (args.Length)
             {
-                var discordService = new DiscordService(setting, httpClient, dbSvs, healthPlanetSvs);
-
-                /* エラーフラグ確認 */
-                var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);
-
-                if (errorFlag == "1")
-                {
-                    await healthPlanetSvs.GetRefreshToken();
-                    try
+                case 0:
                     {
-                        JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
+                        var discordService = new DiscordService(setting, httpClient, dbSvs, healthPlanetSvs);
+
+                        /* エラーフラグ確認 */
+                        var errorFlag = await dbSvs.GetSettingDbVal(SettingDbEnum.ErrorFlag);
+
+                        switch (errorFlag)
+                        {
+                            case "1":
+                                await healthPlanetSvs.GetRefreshToken();
+                                try
+                                {
+                                    JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
+                                }
+                                catch
+                                {
+                                    await discordService.SendDiscordAsync("トークンを更新しましたが、データの取得に失敗しました。");
+                                    await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "2");
+                                    throw;
+                                }
+                                await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
+                                return;
+                            case "2":
+                                return;
+                        }
+
+                        /* 前回測定日時 */
+                        var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurementDate);
+
+                        if (!string.IsNullOrEmpty(previousDate))
+                        {
+                            DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var prevDate);
+                            if (prevDate > setting.LocalTime.AddHours(-6))
+                            {
+                                return;
+                            }
+                        }
+
+                        //リクエストトークン取得
+                        await healthPlanetSvs.GetHealthPlanetToken();
+
+                        /* 身体データ取得 */
+                        InnerScan healthData;
+                        try
+                        {
+                            healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
+                        }
+                        catch
+                        {
+                            await discordService.SendDiscordAsync("身体データの取得に失敗しました。");
+                            await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "1");
+                            throw;
+                        }
+
+                        var healthList = healthData.Data;
+
+                        /* 最新の日付のデータを取得 */
+                        healthList.Sort((a, b) => string.CompareOrdinal(b.Date, a.Date));
+                        var latestDate = healthList.First().Date;
+
+                        if (latestDate.Equals(previousDate))
+                        {
+                            //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                            return;
+                        }
+
+                        /* Discordに送るためのデータをDictionary化 */
+                        var health = new HealthData(latestDate, healthList.Where(x => x.Date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.Tag, x => x.Keydata));
+
+                        /* Discordに送信 */
+                        var sendData = await discordService.CreateSendDataAsync(health, healthData.Height, latestDate);
+                        await discordService.SendDiscordAsync(sendData);
+
+                        if (setting.PostGoogleFit)
+                        {
+                            var googleFitService = new GoogleFitService(setting, httpClient);
+                            await googleFitService.PostGoogleFit(health);
+                        }
+
+                        /* 前回情報をDBに登録 */
+                        await dbSvs.SetHealthData(latestDate, health);
+                        break;
                     }
-                    catch
+                case 2:
                     {
-                        await discordService.SendDiscordAsync("トークンを更新しましたが、データの取得に失敗しました。");
-                        await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "2");
-                        throw;
-                    }
-                    await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
-                    return;
-                }
-                else if (errorFlag == "2")
-                {
-                    return;
-                }
+                        var userId = args[0];
+                        var passwd = args[1];
+                        //初期処理
+                        await dbSvs.CreateTable();
+                        await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
+                        await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
 
-                /* 前回測定日時 */
-                var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurememtDate);
+                        //GoogleAPI処理
+                        if (setting.PostGoogleFit)
+                        {
+                            var googleFitService = new GoogleFitService(setting, httpClient);
+                            await googleFitService.GetGoogleOAuth();
+                        }
 
-                if (!string.IsNullOrEmpty(previousDate))
-                {
-                    DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var prevDate);
-                    if (prevDate > setting.LocalTime.AddHours(-6))
-                    {
+                        Console.WriteLine("初期処理が完了しました。");
                         return;
                     }
-                }
-
-                //リクエストトークン取得
-                await healthPlanetSvs.GetHealthPlanetToken();
-
-                /* 身体データ取得 */
-                InnerScan healthData = null;
-                try
-                {
-                    healthData = JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
-                }
-                catch
-                {
-                    await discordService.SendDiscordAsync("身体データの取得に失敗しました。");
-                    await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "1");
-                    throw;
-                }
-
-                var healthList = healthData.data;
-
-                /* 最新の日付のデータを取得 */
-                healthList.Sort((a, b) => string.Compare(b.date, a.date));
-                var latestDate = healthList.First().date.ToString();
-
-                if (latestDate.Equals(previousDate))
-                {
-                    //前回から計測日が変わっていない(=計測してない)ので処理を終了
-                    return;
-                }
-
-                /* Discordに送るためのデータをDictionary化 */
-                var health = new HealthData(latestDate, healthList.Where(x => x.date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.tag, x => x.keydata));
-
-                /* Discordに送信 */
-                var sendData = await discordService.CreateSendDataAsync(health, healthData.height, latestDate);
-                await discordService.SendDiscordAsync(sendData);
-
-                if (setting.PostGoogleFit)
-                {
-                    var googleFitService = new GoogleFitService(setting, httpClient);
-                    await googleFitService.PostGoogleFit(health);
-                }
-
-                /* 前回情報をDBに登録 */
-                await dbSvs.SetHealthData(latestDate, health);
-            }
-            else if (args.Length == 2)
-            {
-                var userId = args[0];
-                var passwd = args[1];
-                //初期処理
-                await dbSvs.CreateTable();
-                await healthPlanetSvs.OAuthProcessAsync(userId, passwd);
-                await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
-
-                //GoogleAPI処理
-                if (setting.PostGoogleFit)
-                {
-                    var googleFitService = new GoogleFitService(setting, httpClient);
-                    await googleFitService.GetGoogleOAuth();
-                }
-
-                Console.WriteLine("初期処理が完了しました。");
-                return;
-            }
-            else
-            {
-                Console.WriteLine("引数の個数が誤っています。");
+                default:
+                    Console.WriteLine("引数の個数が誤っています。");
+                    break;
             }
         }
     }
