@@ -2,6 +2,7 @@
 using PostDietProgress.Model;
 using PostDietProgress.Service;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
@@ -17,7 +18,7 @@ namespace PostDietProgress
         /// </summary>
         /// <param name="args"></param>
         /// <returns></returns>
-        static async Task Main(string[] args)
+        private static async Task Main(string[] args)
         {
             var setting = new Settings();
 
@@ -64,6 +65,9 @@ namespace PostDietProgress
                         /* 前回測定日時 */
                         var previousDate = await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousMeasurementDate);
 
+#if DEBUG
+                        previousDate = null;
+#endif
                         if (!string.IsNullOrEmpty(previousDate))
                         {
                             DateTime.TryParseExact(previousDate, "yyyyMMddHHmm", new CultureInfo("ja-JP"), DateTimeStyles.AssumeLocal, out var prevDate);
@@ -73,7 +77,7 @@ namespace PostDietProgress
                             }
                         }
 
-                        //リクエストトークン取得
+                        /* リクエストトークン取得 */
                         await healthPlanetSvs.GetHealthPlanetToken();
 
                         /* 身体データ取得 */
@@ -97,25 +101,53 @@ namespace PostDietProgress
 
                         if (latestDate.Equals(previousDate))
                         {
-                            //前回から計測日が変わっていない(=計測してない)ので処理を終了
+                            /* 前回から計測日が変わっていない(=計測してない)ので処理を終了 */
                             return;
                         }
 
-                        /* Discordに送るためのデータをDictionary化 */
-                        var health = new HealthData(latestDate, healthList.Where(x => x.Date.Equals(latestDate)).Select(x => x).ToDictionary(x => x.Tag, x => x.Keydata));
+                        /* 取得したデータから日時情報を抜き出す */
+                        var healthDateList = healthList.Select(x => x.Date).Distinct().ToList();
+
+                        /* HealthPlanetから取得した情報をDictionary化 */
+                        var healthPlanetDataList = new List<HealthData>();
+                        foreach (var healthDate in healthDateList)
+                        {
+                            healthPlanetDataList.Add(new HealthData(healthDate, healthList.Where(x => x.Date.Equals(healthDate)).Select(x => x).ToDictionary(x => x.Tag, x => x.Keydata)));
+                        }
+
+                        /* DBに登録した情報の取得 */
+                        var acquiredHealthDataList = await dbSvs.GetHealthDataByDateList(healthDateList);
+
+                        /* DB未登録のデータを取得 */
+                        var unRegisteredHealthDataList = healthDateList.Where(y => y != latestDate).Except(acquiredHealthDataList.Select(x => x.DateTime).ToList()).ToList();
+
+                        foreach (var healthDateTime in unRegisteredHealthDataList)
+                        {
+                            /* DB未登録データを登録する */
+                            var health = healthPlanetDataList.First(x => x.DateTime == healthDateTime);
+                            await dbSvs.SetHealthData(health);
+                            if (setting.PostGoogleFit)
+                            {
+                                var googleFitService = new GoogleFitService(setting, httpClient);
+                                await googleFitService.PostGoogleFit(health);
+                            }
+                        }
+
+                        /* Discordに送るためのデータ */
+                        var postHealthData = healthPlanetDataList.First(x => x.DateTime == latestDate);
 
                         /* Discordに送信 */
-                        var sendData = await discordService.CreateSendDataAsync(health, healthData.Height, latestDate);
+                        var sendData = await discordService.CreateSendDataAsync(postHealthData, healthData.Height, latestDate);
                         await discordService.SendDiscordAsync(sendData);
 
                         if (setting.PostGoogleFit)
                         {
                             var googleFitService = new GoogleFitService(setting, httpClient);
-                            await googleFitService.PostGoogleFit(health);
+                            await googleFitService.PostGoogleFit(postHealthData);
                         }
 
                         /* 前回情報をDBに登録 */
-                        await dbSvs.SetHealthData(latestDate, health);
+                        await dbSvs.SetHealthData(postHealthData);
                         break;
                     }
                 case 2:
