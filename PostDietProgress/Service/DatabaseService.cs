@@ -124,9 +124,9 @@ namespace PostDietProgress.Service
         /// <param name="latestDate"></param>
         /// <param name="healthData"></param>
         /// <returns></returns>
-        public async Task SetHealthData(string latestDate, HealthData healthData)
+        public async Task SetHealthData(HealthData healthData)
         {
-            await SetSettingDbVal(SettingDbEnum.PreviousMeasurementDate, latestDate);
+            await SetSettingDbVal(SettingDbEnum.PreviousMeasurementDate, healthData.DateTime);
             await SetSettingDbVal(SettingDbEnum.PreviousWeight, healthData.Weight);
 
             await using var dbConn = new SqliteConnection(_setting.SqlConnectionSb.ToString());
@@ -142,12 +142,25 @@ namespace PostDietProgress.Service
                 healthDataText.AppendLine("@DATETIME,@WEIGHT,@BODYFATPERF,@MUSCLEMASS,@MUSCLESCORE,@VISCERALFATLEVEL2,@VISCERALFATLEVEL,@BASALMETABOLISM,@BODYAGE,@BONEQUANTITY");
                 healthDataText.AppendLine(")");
 
-                await dbConn.ExecuteAsync(healthDataText.ToString(), healthData, tran);
+                var parameters = new DynamicParameters();
+                parameters.Add("@DATETIME", healthData.DateTime);
+                parameters.Add("@WEIGHT", healthData.Weight);
+                parameters.Add("@BODYFATPERF", healthData.BodyFatPerf);
+                parameters.Add("@MUSCLEMASS", healthData.MuscleMass);
+                parameters.Add("@MUSCLESCORE", healthData.MuscleScore);
+                parameters.Add("@VISCERALFATLEVEL2", healthData.VisceralFatLevel2);
+                parameters.Add("@VISCERALFATLEVEL", healthData.VisceralFatLevel);
+                parameters.Add("@BASALMETABOLISM", healthData.BasalMetabolism);
+                parameters.Add("@BODYAGE", healthData.BodyAge);
+                parameters.Add("@BONEQUANTITY", healthData.BoneQuantity);
+
+                await dbConn.ExecuteAsync(healthDataText.ToString(), parameters, tran);
 
                 tran.Commit();
             }
-            catch
+            catch (Exception e)
             {
+                Console.WriteLine(e.Message);
                 tran.Rollback();
             }
         }
@@ -183,6 +196,19 @@ namespace PostDietProgress.Service
                 result = item;
             }
             return result;
+        }
+
+        /// <summary>
+        /// 指定された日時リストから計測データを取得
+        /// </summary>
+        /// <returns></returns>
+        public async Task<List<HealthData>> GetHealthDataByDateList(List<string> dateList)
+        {
+            await using var dbConn = new SqliteConnection(_setting.SqlConnectionSb.ToString());
+            var parameters = new DynamicParameters();
+            parameters.Add("@DateList", dateList);
+            var sql = "SELECT * FROM HEALTHDATA WHERE DATETIME IN @DateList";
+            return (await dbConn.QueryAsync<HealthData>(sql, parameters)).ToList();
         }
 
         /// <summary>
