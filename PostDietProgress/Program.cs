@@ -53,11 +53,30 @@ namespace PostDietProgress
                                 {
                                     await discordService.SendDiscordAsync("トークンを更新しましたが、データの取得に失敗しました。");
                                     await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "2");
+                                    await dbSvs.SetSettingDbVal(SettingDbEnum.PreviousErrorDateTime, setting.LocalTime.ToString());
                                     throw;
                                 }
                                 await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
                                 return;
                             case "2":
+                                DateTime.TryParseExact(await dbSvs.GetSettingDbVal(SettingDbEnum.PreviousErrorDateTime)
+                                    , "yyyyMMddHHmm",
+                                    new CultureInfo("ja-JP"),
+                                    DateTimeStyles.AssumeLocal, out var errorDate);
+
+                                if (errorDate <= setting.LocalTime.AddHours(-3)) return;
+
+                                await healthPlanetSvs.GetRefreshToken();
+                                try
+                                {
+                                    JsonConvert.DeserializeObject<InnerScan>(await healthPlanetSvs.GetHealthDataAsync());
+                                }
+                                catch
+                                {
+                                    await dbSvs.SetSettingDbVal(SettingDbEnum.PreviousErrorDateTime, setting.LocalTime.ToString());
+                                    throw;
+                                }
+                                await dbSvs.SetSettingDbVal(SettingDbEnum.ErrorFlag, "0");
                                 return;
                         }
 

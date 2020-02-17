@@ -69,7 +69,7 @@ namespace PostDietProgress.Service
 
                 postData += "前日同時間帯測定(" + prevDate.ToString("yyyy年MM月dd日(ddd)") + " " + prevDate.ToShortTimeString() + ")から" + diffWeight + "kgの変化" + Environment.NewLine;
 
-                postData += diffWeight >= 0 ? (Math.Abs(diffWeight) < 0.00000001 ? "変わってない・・・。" : "増えてる・・・。") : "減った！";
+                postData += diffWeight >= 0 ? (Math.Abs(diffWeight) < 0.00000001 ? "変わってない・・・。" : "増えてる・・・。") : "減った！" + Environment.NewLine;
             }
 
             /* 日曜日なら移動平均計算 */

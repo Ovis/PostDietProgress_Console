@@ -14,6 +14,7 @@
         RequestToken,
         ExpiresIn,
         RefreshToken,
-        ErrorFlag
+        ErrorFlag,
+        PreviousErrorDateTime
     }
 }

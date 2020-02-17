@@ -47,6 +47,7 @@ namespace PostDietProgress.Service
                 await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSWEIGHT", Val = "" }, tran);
                 await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVWEEKWEIGHT", Val = "" }, tran);
                 await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "ERRORFLAG", Val = "0" }, tran);
+                await dbConn.ExecuteAsync(strBuilder.ToString(), new { Key = "PREVIOUSERRORDATETIME", Val = "" }, tran);
 
                 tran.Commit();
             }
@@ -229,6 +230,9 @@ namespace PostDietProgress.Service
                     break;
                 case SettingDbEnum.ErrorFlag:
                     key = "ERRORFLAG";
+                    break;
+                case SettingDbEnum.PreviousErrorDateTime:
+                    key = "PREVIOUSERRORDATETIME";
                     break;
             }
 
