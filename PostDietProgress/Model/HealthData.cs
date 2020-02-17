@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PostDietProgress.Model
 {
@@ -40,10 +41,8 @@ namespace PostDietProgress.Model
         {
             DateTime = dateTime;
 
-            foreach (var item in dic)
+            foreach (var enumVal in dic.Select(item => (HealthTag)Enum.ToObject(typeof(HealthTag), int.Parse(item.Key))))
             {
-                var enumVal = (HealthTag)Enum.ToObject(typeof(HealthTag), Int32.Parse(item.Key));
-
                 switch (enumVal)
                 {
                     case HealthTag.WEIGHT:

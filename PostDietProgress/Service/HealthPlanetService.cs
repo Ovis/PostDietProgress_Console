@@ -192,7 +192,7 @@ namespace PostDietProgress.Service
             /* 取得期間From,To */
             var jst = TZConvert.GetTimeZoneInfo("Tokyo Standard Time");
             var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, jst);
-            postString.Append("from=" + localTime.AddDays(-2).ToString("yyyyMMdd") + "000000" + "&");
+            postString.Append("from=" + localTime.AddDays(-14).ToString("yyyyMMdd") + "000000" + "&");
             postString.Append("to=" + localTime.ToString("yyyyMMdd") + "235959" + "&");
             /* 取得データ */
             postString.Append("tag=6021,6022,6023,6024,6025,6026,6027,6028,6029" + "&");
